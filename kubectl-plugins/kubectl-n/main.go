@@ -8,7 +8,6 @@ package main
 
 import (
 	"cmp"
-	"context"
 	"fmt"
 	"os"
 	"reflect"
@@ -17,12 +16,9 @@ import (
 	"text/tabwriter"
 	"time"
 
+	"github.com/jim-barber-he/go/k8s"
 	flag "github.com/spf13/pflag"
 	v1 "k8s.io/api/core/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/client-go/kubernetes"
-	restclient "k8s.io/client-go/rest"
-	"k8s.io/client-go/tools/clientcmd"
 )
 
 const (
@@ -109,9 +105,9 @@ func main() {
 	flag.StringVar(&kubeContext, "context", "", "The name of the kubeconfig context to use")
 	flag.Parse()
 
-	clientset := k8sClient(kubeContext)
+	clientset := k8s.Client(kubeContext)
 
-	nodes, err := listNodes(clientset)
+	nodes, err := k8s.ListNodes(clientset)
 	if err != nil {
 		panic(err.Error())
 	}
@@ -191,15 +187,6 @@ func main() {
 			}
 		}
 	}
-}
-
-// Based on clientcmd.BuildConfigFromFlags but with the added `context` parameter to set `CurrentContext` and masterUrl removed.
-func buildConfigFromFlags(kubeconfigPath, context string) (*restclient.Config, error) {
-	return clientcmd.NewNonInteractiveDeferredLoadingClientConfig(
-		&clientcmd.ClientConfigLoadingRules{ExplicitPath: kubeconfigPath},
-		&clientcmd.ConfigOverrides{
-			CurrentContext: context,
-		}).ClientConfig()
 }
 
 // Return the age in a human readable format of the first 2 non-zero time units from weeks to seconds,
@@ -284,31 +271,4 @@ func getNodeStatus(conditions []v1.NodeCondition) (string, []string) {
 	}
 
 	return status, messages
-}
-
-func k8sClient(kubeContext string) *kubernetes.Clientset {
-	configAccess := clientcmd.NewDefaultPathOptions()
-	kubeconfig := configAccess.GetDefaultFilename()
-
-	config, err := buildConfigFromFlags(kubeconfig, kubeContext)
-	if err != nil {
-		panic(err.Error())
-	}
-
-	// Create the clientset
-	clientset, err := kubernetes.NewForConfig(config)
-	if err != nil {
-		panic(err.Error())
-	}
-
-	return clientset
-}
-
-func listNodes(client kubernetes.Interface) (*v1.NodeList, error) {
-	nodes, err := client.CoreV1().Nodes().List(context.Background(), metav1.ListOptions{})
-	if err != nil {
-		err = fmt.Errorf("error getting nodes: %v", err)
-		return nil, err
-	}
-	return nodes, nil
 }
