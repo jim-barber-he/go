@@ -22,13 +22,32 @@ import (
 )
 
 const (
+	numSecondsPerWeek   = 60 * 60 * 24 * 7
+	numSecondsPerDay    = 60 * 60 * 24
+	numSecondsPerHour   = 60 * 60
+	numSecondsPerMinute = 60
+
 	tableFlags    = 0
 	tableMinWidth = 0
 	tablePadChar  = ' '
 	tablePadding  = 2
 	tableTabWidth = 8
-	tick          = "\u2713"
+
+	tick = "\u2713"
 )
+
+// Is there a better way than defining this as a global var?
+var goodStatuses = map[v1.NodeConditionType]v1.ConditionStatus{
+	"CorruptDockerOverlay2": "False",
+	"DiskPressure":          "False",
+	"KernelDeadlock":        "False",
+	"MemoryPressure":        "False",
+	"NetworkUnavailable":    "False",
+	"OutOfDisk":             "False",
+	"PIDPressure":           "False",
+	"ReadonlyFilesystem":    "False",
+	"Ready":                 "True",
+}
 
 type tableRow struct {
 	Name          string `title:"NAME"`
@@ -46,9 +65,8 @@ type tableRow struct {
 
 // Returns a table row with the field values populated via the struct tag called 'title'.
 // If the table row item is unset and the title tag is set to 'omitempty' then do not include it.
-func (r *tableRow) getTitleRow() (row tableRow) {
-	// The following can also be written as follows but which is better?
-	//   v := reflect.ValueOf(r).Elem()
+func (r *tableRow) getTitleRow() tableRow {
+	var row tableRow
 	v := reflect.ValueOf(*r)
 	for i, sf := range reflect.VisibleFields(v.Type()) {
 		titleArray := strings.Split(sf.Tag.Get("title"), ",")
@@ -65,11 +83,12 @@ func (r *tableRow) getTitleRow() (row tableRow) {
 func (r *tableRow) tabValues() string {
 	var s []string
 	v := reflect.ValueOf(*r)
-	for i := 0; i < v.NumField(); i++ {
+	for i := range v.NumField() {
 		if str := strings.TrimSpace(v.Field(i).String()); str != "" {
 			s = append(s, str)
 		}
 	}
+
 	return strings.Join(s, "\t")
 }
 
@@ -111,7 +130,6 @@ func main() {
 	if err != nil {
 		panic(err.Error())
 	}
-	// Bail if no nodes were found.
 	if len(nodes.Items) == 0 {
 		panic("No nodes found")
 	}
@@ -119,60 +137,51 @@ func main() {
 	var tbl table
 	warnings := make(map[string][]string)
 	for _, node := range nodes.Items {
-		var r tableRow
+		var row tableRow
 		// Just keep the hostname and strip off any domain name.
-		r.Name = strings.Split(node.Name, ".")[0]
+		row.Name = strings.Split(node.Name, ".")[0]
 
-		// Handle any conditions for the node to determine if it is healthy.
-		// Keep track of any warning messages for the node.
+		// Keep track of any warning messages for the node and a status to reflect if there are problems.
 		status, messages := getNodeStatus(node.Status.Conditions)
 		warnings[node.Name] = messages
 		if node.Spec.Unschedulable {
 			status += " *"
 			warnings[node.Name] = append(warnings[node.Name], "Scheduling Disabled")
 		}
-		r.Ok = status
+		row.Ok = status
 
-		r.Age = formatAge(node.CreationTimestamp.Time)
-		r.Version = node.Status.NodeInfo.KubeletVersion
-
-		runtime := strings.Split(node.Status.NodeInfo.ContainerRuntimeVersion, "/")
-		r.Runtime = runtime[len(runtime)-1]
+		row.Age = formatAge(node.CreationTimestamp.Time)
+		row.Version = node.Status.NodeInfo.KubeletVersion
+		row.Runtime = lastSplitItem(node.Status.NodeInfo.ContainerRuntimeVersion, "/")
 
 		// Additional columns for AWS EC2 instances are from this point on.
 
-		r.Type = node.Labels["node.kubernetes.io/instance-type"]
+		row.Type = node.Labels["node.kubernetes.io/instance-type"]
 
 		if node.Labels["node-role.kubernetes.io/spot-worker"] != "" {
-			r.Spot = tick
+			row.Spot = tick
 		} else {
-			r.Spot = "x"
+			row.Spot = "x"
 		}
 
-		az := strings.Split(node.Labels["topology.kubernetes.io/zone"], "")
-		if len(az) > 0 {
-			r.AZ = az[len(az)-1]
-		}
+		row.AZ = lastSplitItem(node.Labels["topology.kubernetes.io/zone"], "")
 
 		// The external AWS controller manager sets the node names to the Instance ID,
 		// while the old AWS code in k8s sets it to the DNS name that contains the IP address.
 		// Depending on which one is used will determine if the InstanceID or IP value is set.
 		if strings.HasPrefix(node.Name, "ip-") {
-			providerID := strings.Split(node.Spec.ProviderID, "/")
-			if len(providerID) > 0 {
-				r.InstanceID = providerID[len(providerID)-1]
-			}
+			row.InstanceID = lastSplitItem(node.Spec.ProviderID, "/")
 		} else {
-			r.IP = node.Annotations["alpha.kubernetes.io/provided-node-ip"]
+			row.IP = node.Annotations["alpha.kubernetes.io/provided-node-ip"]
 		}
 
 		// Handle getting a node group for both EKS and kOps.
-		r.InstanceGroup = cmp.Or(
+		row.InstanceGroup = cmp.Or(
 			node.Labels["kops.k8s.io/instancegroup"],
 			node.Labels["eks.amazonaws.com/nodegroup"],
 		)
 
-		tbl.append(r)
+		tbl.append(row)
 	}
 
 	// Display the table.
@@ -191,6 +200,7 @@ func main() {
 
 // Return the age in a human readable format of the first 2 non-zero time units from weeks to seconds,
 // or just the seconds if no higher time unit was above 0.
+// This differs from duration.String() in that it also handles weeks and days.
 func formatAge(timestamp time.Time) string {
 	var weeks, days, hours, minutes, seconds int
 
@@ -198,17 +208,17 @@ func formatAge(timestamp time.Time) string {
 
 	seconds = int(duration.Seconds())
 
-	weeks = seconds / (60 * 60 * 24 * 7)
-	seconds -= weeks * 60 * 60 * 24 * 7
+	weeks = seconds / numSecondsPerWeek
+	seconds -= weeks * numSecondsPerWeek
 
-	days = seconds / (60 * 60 * 24)
-	seconds -= days * 60 * 60 * 24
+	days = seconds / numSecondsPerDay
+	seconds -= days * numSecondsPerDay
 
-	hours = seconds / (60 * 60)
-	seconds -= hours * 60 * 60
+	hours = seconds / numSecondsPerHour
+	seconds -= hours * numSecondsPerHour
 
-	minutes = seconds / 60
-	seconds -= minutes * 60
+	minutes = seconds / numSecondsPerMinute
+	seconds -= minutes * numSecondsPerMinute
 
 	var dateStr string
 	// When set to true, return as soon as the next non-zero time unit is set.
@@ -238,37 +248,36 @@ func formatAge(timestamp time.Time) string {
 			return dateStr
 		}
 	}
+
 	return fmt.Sprintf("%s%ds", dateStr, seconds)
 }
 
 // Looks at the conditions of a node and returns the node's status and any warning messages associated with it.
 func getNodeStatus(conditions []v1.NodeCondition) (string, []string) {
-	goodStatuses := map[v1.NodeConditionType]v1.ConditionStatus{
-		"CorruptDockerOverlay2": "False",
-		"DiskPressure":          "False",
-		"KernelDeadlock":        "False",
-		"MemoryPressure":        "False",
-		"NetworkUnavailable":    "False",
-		"OutOfDisk":             "False",
-		"PIDPressure":           "False",
-		"ReadonlyFilesystem":    "False",
-		"Ready":                 "True",
-	}
-
 	var messages []string
-	status := tick
 
+	status := tick
 	for _, condition := range conditions {
 		if _, ok := goodStatuses[condition.Type]; !ok {
 			fmt.Printf("Warning, we haven't covered all conditions - Please add %s to goodStatuses", condition.Type)
+			continue
 		}
 		if condition.Status != goodStatuses[condition.Type] {
 			messages = append(messages, fmt.Sprintf("%s=%s", condition.Type, condition.Message))
 		}
-		if len(messages) > 0 {
-			status = "x"
-		}
+	}
+	if len(messages) > 0 {
+		status = "x"
 	}
 
 	return status, messages
+}
+
+// lastSplitItem() splits a string into a slice based on a split character and returns the last item.
+func lastSplitItem(str, splitChar string) string {
+	result := strings.Split(str, splitChar)
+	if len(result) > 0 {
+		return result[len(result)-1]
+	}
+	return ""
 }

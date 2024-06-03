@@ -3,7 +3,7 @@ module github.com/jim-barber-he/go/kubectl-plugins/kubectl-n
 go 1.22.3
 
 require (
-	github.com/jim-barber-he/go/k8s v0.0.0-20240603101037-023cc1e846d0
+	github.com/jim-barber-he/go/k8s v0.0.0
 	github.com/spf13/pflag v1.0.5
 	k8s.io/api v0.30.1
 )
@@ -47,3 +47,5 @@ require (
 	sigs.k8s.io/structured-merge-diff/v4 v4.4.1 // indirect
 	sigs.k8s.io/yaml v1.3.0 // indirect
 )
+
+replace github.com/jim-barber-he/go/k8s => ../../k8s
