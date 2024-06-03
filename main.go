@@ -139,15 +139,10 @@ func main() {
 		}
 
 		// Handle getting a node group for both EKS and kOps.
-		for _, nodeGroup := range []string{
-			node.Labels["eks.amazonaws.com/nodegroup"],
+		r.InstanceGroup = cmp.Or(
 			node.Labels["kops.k8s.io/instancegroup"],
-		} {
-			if nodeGroup != "" {
-				r.InstanceGroup = nodeGroup
-				break
-			}
-		}
+			node.Labels["eks.amazonaws.com/nodegroup"],
+		)
 
 		rows = append(rows, r)
 	}
