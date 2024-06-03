@@ -12,7 +12,6 @@ import (
 	"fmt"
 	"os"
 	"reflect"
-	"regexp"
 	"slices"
 	"strings"
 	"text/tabwriter"
@@ -61,25 +60,16 @@ func (r *tableRow) getTitleRow() (row tableRow) {
 	return row
 }
 
-// Output the values of the tableRow struct separated by tabs.
+// Output the values of the tableRow struct separated by tabs. Empty fields are ignored.
 func (r *tableRow) tabValues() string {
-	// Empty fields represented by multiple tabs will be removed by squashing to just one tab to remove the field.
-	var re = regexp.MustCompile(`\t{2,}`)
-	return re.ReplaceAllString(
-		fmt.Sprintf(
-			"%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s",
-			r.Name,
-			r.Ok,
-			r.Age,
-			r.Version,
-			r.Runtime,
-			r.Type,
-			r.Spot,
-			r.AZ,
-			r.InstanceID,
-			r.IP,
-			r.InstanceGroup,
-		), "\t")
+	var s []string
+	v := reflect.ValueOf(*r)
+	for i := 0; i < v.NumField(); i++ {
+		if str := strings.TrimSpace(v.Field(i).String()); str != "" {
+			s = append(s, str)
+		}
+	}
+	return strings.Join(s, "\t")
 }
 
 func main() {
