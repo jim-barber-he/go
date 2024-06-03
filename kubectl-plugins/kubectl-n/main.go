@@ -26,7 +26,12 @@ import (
 )
 
 const (
-	tick = "\u2713"
+	tableFlags    = 0
+	tableMinWidth = 0
+	tablePadChar  = ' '
+	tablePadding  = 2
+	tableTabWidth = 8
+	tick          = "\u2713"
 )
 
 type tableRow struct {
@@ -72,6 +77,33 @@ func (r *tableRow) tabValues() string {
 	return strings.Join(s, "\t")
 }
 
+type table struct {
+	rows []tableRow
+}
+
+func (t *table) append(r tableRow) {
+	t.rows = append(t.rows, r)
+}
+
+func (t *table) write() {
+	// Sort function to sort the rows slice by InstanceGroup, then AZ, then Name when iterating through it.
+	slices.SortFunc(t.rows, func(a, b tableRow) int {
+		return cmp.Or(
+			cmp.Compare(a.InstanceGroup, b.InstanceGroup),
+			cmp.Compare(a.AZ, b.AZ),
+			cmp.Compare(a.Name, b.Name),
+		)
+	})
+
+	tw := tabwriter.NewWriter(os.Stdout, tableMinWidth, tableTabWidth, tablePadding, tablePadChar, tableFlags)
+	titles := t.rows[0].getTitleRow()
+	fmt.Fprintln(tw, titles.tabValues())
+	for _, row := range t.rows {
+		fmt.Fprintln(tw, row.tabValues())
+	}
+	tw.Flush()
+}
+
 func main() {
 	var kubeContext string
 	flag.StringVar(&kubeContext, "context", "", "The name of the kubeconfig context to use")
@@ -88,7 +120,7 @@ func main() {
 		panic("No nodes found")
 	}
 
-	var rows []tableRow
+	var tbl table
 	warnings := make(map[string][]string)
 	for _, node := range nodes.Items {
 		var r tableRow
@@ -144,26 +176,11 @@ func main() {
 			node.Labels["eks.amazonaws.com/nodegroup"],
 		)
 
-		rows = append(rows, r)
+		tbl.append(r)
 	}
 
-	// Sort function to sort the rows slice by InstanceGroup, then AZ, then Name when iterating through it.
-	slices.SortFunc(rows, func(a, b tableRow) int {
-		return cmp.Or(
-			cmp.Compare(a.InstanceGroup, b.InstanceGroup),
-			cmp.Compare(a.AZ, b.AZ),
-			cmp.Compare(a.Name, b.Name),
-		)
-	})
-
-	// Display a table with a title row and then the results.
-	tw := tabwriter.NewWriter(os.Stdout, 0, 8, 2, ' ', 0)
-	titles := rows[0].getTitleRow()
-	fmt.Fprintln(tw, titles.tabValues())
-	for _, row := range rows {
-		fmt.Fprintln(tw, row.tabValues())
-	}
-	tw.Flush()
+	// Display the table.
+	tbl.write()
 
 	// Display any warning messages for the nodes.
 	for nodeName, warnArray := range warnings {
