@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"os"
 	"reflect"
+	"regexp"
 	"slices"
 	"strings"
 	"text/tabwriter"
@@ -46,11 +47,12 @@ type tableRow struct {
 // Returns a table row with the field values populated via the struct tag called 'title'.
 // If the table row item is unset and the title tag is set to 'omitempty' then do not include it.
 func (r *tableRow) getTitleRow() (row tableRow) {
-	t := reflect.TypeOf(*r)
+	// The following can also be written as follows but which is better?
+	//   v := reflect.ValueOf(r).Elem()
 	v := reflect.ValueOf(*r)
-	for i := 0; i < t.NumField(); i++ {
-		titleArray := strings.Split(t.Field(i).Tag.Get("title"), ",")
-		if len(titleArray) > 1 && titleArray[1] == "omitempty" && fmt.Sprint(v.Field(i)) == "" {
+	for i, sf := range reflect.VisibleFields(v.Type()) {
+		titleArray := strings.Split(sf.Tag.Get("title"), ",")
+		if len(titleArray) > 1 && titleArray[1] == "omitempty" && v.Field(i).String() == "" {
 			continue
 		}
 		reflect.ValueOf(&row).Elem().Field(i).SetString(titleArray[0])
@@ -61,20 +63,23 @@ func (r *tableRow) getTitleRow() (row tableRow) {
 
 // Output the values of the tableRow struct separated by tabs.
 func (r *tableRow) tabValues() string {
-	return fmt.Sprintf(
-		"%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s",
-		r.Name,
-		r.Ok,
-		r.Age,
-		r.Version,
-		r.Runtime,
-		r.Type,
-		r.Spot,
-		r.AZ,
-		r.InstanceID,
-		r.IP,
-		r.InstanceGroup,
-	)
+	// Empty fields represented by multiple tabs will be removed by squashing to just one tab to remove the field.
+	var re = regexp.MustCompile(`\t{2,}`)
+	return re.ReplaceAllString(
+		fmt.Sprintf(
+			"%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s",
+			r.Name,
+			r.Ok,
+			r.Age,
+			r.Version,
+			r.Runtime,
+			r.Type,
+			r.Spot,
+			r.AZ,
+			r.InstanceID,
+			r.IP,
+			r.InstanceGroup,
+		), "\t")
 }
 
 func main() {
@@ -102,7 +107,7 @@ func main() {
 
 		// Handle any conditions for the node to determine if it is healthy.
 		// Keep track of any warning messages for the node.
-		status, messages := getStatus(node.Status.Conditions)
+		status, messages := getNodeStatus(node.Status.Conditions)
 		warnings[node.Name] = messages
 		if node.Spec.Unschedulable {
 			status += " *"
@@ -110,7 +115,7 @@ func main() {
 		}
 		r.Ok = status
 
-		r.Age = formatAge(node.CreationTimestamp)
+		r.Age = formatAge(node.CreationTimestamp.Time)
 		r.Version = node.Status.NodeInfo.KubeletVersion
 
 		runtime := strings.Split(node.Status.NodeInfo.ContainerRuntimeVersion, "/")
@@ -197,10 +202,10 @@ func buildConfigFromFlags(kubeconfigPath, context string) (*restclient.Config, e
 
 // Return the age in a human readable format of the first 2 non-zero time units from weeks to seconds,
 // or just the seconds if no higher time unit was above 0.
-func formatAge(timestamp metav1.Time) string {
+func formatAge(timestamp time.Time) string {
 	var weeks, days, hours, minutes, seconds int
 
-	duration := time.Since(timestamp.Time).Round(time.Second)
+	duration := time.Since(timestamp).Round(time.Second)
 
 	seconds = int(duration.Seconds())
 
@@ -248,7 +253,7 @@ func formatAge(timestamp metav1.Time) string {
 }
 
 // Looks at the conditions of a node and returns the node's status and any warning messages associated with it.
-func getStatus(conditions []v1.NodeCondition) (string, []string) {
+func getNodeStatus(conditions []v1.NodeCondition) (string, []string) {
 	goodStatuses := map[v1.NodeConditionType]v1.ConditionStatus{
 		"CorruptDockerOverlay2": "False",
 		"DiskPressure":          "False",
