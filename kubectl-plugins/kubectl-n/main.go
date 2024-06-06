@@ -67,7 +67,7 @@ type tableRow struct {
 // If the row field is unset and the title tag is set to 'omitempty' then do not include it.
 func getTitleRow[R any](row *R) *R {
 	var result R
-	resultElem := reflect.ValueOf(result).Elem()
+	resultElem := reflect.ValueOf(&result).Elem()
 
 	v := reflect.ValueOf(*row)
 	for i, sf := range reflect.VisibleFields(v.Type()) {
