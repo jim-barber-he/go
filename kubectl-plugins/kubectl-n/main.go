@@ -70,27 +70,27 @@ type tableRow struct {
 	InstanceGroup string `title:"INSTANCE-GROUP,omitempty"`
 }
 
-// Returns a new table row with the field values populated via the struct tag called 'title'.
-// If the table row field is unset and the title tag is set to 'omitempty' then do not include it.
-func (r *tableRow) getTitleRow() tableFormatter {
-	var row tableRow
-	rowElem := reflect.ValueOf(&row).Elem()
+// Returns a new row with the field values populated via the struct tag called 'title'.
+// If the row field is unset and the title tag is set to 'omitempty' then do not include it.
+func getTitleRow[R any](row *R) *R {
+	var result R
+	resultElem := reflect.ValueOf(result).Elem()
 
-	v := reflect.ValueOf(*r)
+	v := reflect.ValueOf(*row)
 	for i, sf := range reflect.VisibleFields(v.Type()) {
 		titleArray := strings.Split(sf.Tag.Get("title"), ",")
 		if len(titleArray) > 1 && titleArray[1] == "omitempty" && v.Field(i).String() == "" {
 			continue
 		}
-		rowElem.Field(i).SetString(titleArray[0])
+		resultElem.Field(i).SetString(titleArray[0])
 	}
-	return &row
+	return &result
 }
 
-// Output the field values of the tableRow struct separated by tabs. Empty fields are ignored.
-func (r *tableRow) tabValues() string {
+// Output the fields of the row struct separated by tabs. Empty fields are ignored.
+func tabValues[R any](row *R) string {
 	var s []string
-	v := reflect.ValueOf(*r)
+	v := reflect.ValueOf(*row)
 	for i := range v.NumField() {
 		if str := strings.TrimSpace(v.Field(i).String()); str != "" {
 			s = append(s, str)
@@ -99,20 +99,20 @@ func (r *tableRow) tabValues() string {
 	return strings.Join(s, "\t")
 }
 
-type table[R tableFormatter] struct {
-	rows []R
+type table[R any] struct {
+	rows []*R
 }
 
-func (t *table[R]) append(r R) {
-	t.rows = append(t.rows, r)
+func (t *table[R]) append(row *R) {
+	t.rows = append(t.rows, row)
 }
 
 func (t *table[R]) write() {
 	tw := tabwriter.NewWriter(os.Stdout, tableMinWidth, tableTabWidth, tablePadding, tablePadChar, tableFlags)
-	titles := t.rows[0].getTitleRow()
-	fmt.Fprintln(tw, titles.tabValues())
+	titles := getTitleRow(t.rows[0])
+	fmt.Fprintln(tw, tabValues(titles))
 	for _, row := range t.rows {
-		fmt.Fprintln(tw, row.tabValues())
+		fmt.Fprintln(tw, tabValues(row))
 	}
 	tw.Flush()
 }
@@ -132,7 +132,7 @@ func main() {
 		panic("No nodes found")
 	}
 
-	var tbl table[*tableRow]
+	var tbl table[tableRow]
 	warnings := make(map[string][]string)
 	for _, node := range nodes.Items {
 		var row tableRow
