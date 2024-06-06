@@ -63,23 +63,25 @@ type tableRow struct {
 	InstanceGroup string `title:"INSTANCE-GROUP,omitempty"`
 }
 
-// Returns a table row with the field values populated via the struct tag called 'title'.
-// If the table row item is unset and the title tag is set to 'omitempty' then do not include it.
-func (r *tableRow) getTitleRow() tableRow {
+// Returns a new table row with the field values populated via the struct tag called 'title'.
+// If the table row field is unset and the title tag is set to 'omitempty' then do not include it.
+func (r *tableRow) getTitleRow() *tableRow {
 	var row tableRow
+	rowElem := reflect.ValueOf(&row).Elem()
+
 	v := reflect.ValueOf(*r)
 	for i, sf := range reflect.VisibleFields(v.Type()) {
 		titleArray := strings.Split(sf.Tag.Get("title"), ",")
 		if len(titleArray) > 1 && titleArray[1] == "omitempty" && v.Field(i).String() == "" {
 			continue
 		}
-		reflect.ValueOf(&row).Elem().Field(i).SetString(titleArray[0])
+		rowElem.Field(i).SetString(titleArray[0])
 	}
 
-	return row
+	return &row
 }
 
-// Output the values of the tableRow struct separated by tabs. Empty fields are ignored.
+// Output the field values of the tableRow struct separated by tabs. Empty fields are ignored.
 func (r *tableRow) tabValues() string {
 	var s []string
 	v := reflect.ValueOf(*r)
@@ -93,16 +95,16 @@ func (r *tableRow) tabValues() string {
 }
 
 type table struct {
-	rows []tableRow
+	rows []*tableRow
 }
 
-func (t *table) append(r tableRow) {
+func (t *table) append(r *tableRow) {
 	t.rows = append(t.rows, r)
 }
 
 func (t *table) write() {
 	// Sort function to sort the rows slice by InstanceGroup, then AZ, then Name when iterating through it.
-	slices.SortFunc(t.rows, func(a, b tableRow) int {
+	slices.SortFunc(t.rows, func(a, b *tableRow) int {
 		return cmp.Or(
 			cmp.Compare(a.InstanceGroup, b.InstanceGroup),
 			cmp.Compare(a.AZ, b.AZ),
@@ -181,7 +183,7 @@ func main() {
 			node.Labels["eks.amazonaws.com/nodegroup"],
 		)
 
-		tbl.append(row)
+		tbl.append(&row)
 	}
 
 	// Display the table.
