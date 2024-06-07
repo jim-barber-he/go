@@ -70,9 +70,17 @@ type tableRow struct {
 	InstanceGroup string `title:"INSTANCE-GROUP,omitempty"`
 }
 
+func (tr *tableRow) String() string {
+	return generic_tabValues(tr)
+}
+
+func (tr *tableRow) TitleRow() *tableRow {
+	return generic_getTitleRow(tr)
+}
+
 // Returns a new row with the field values populated via the struct tag called 'title'.
 // If the row field is unset and the title tag is set to 'omitempty' then do not include it.
-func getTitleRow[R any](row *R) *R {
+func generic_getTitleRow[R any](row *R) *R {
 	var result R
 	resultElem := reflect.ValueOf(&result).Elem()
 
@@ -88,7 +96,7 @@ func getTitleRow[R any](row *R) *R {
 }
 
 // Output the fields of the row struct separated by tabs. Empty fields are ignored.
-func tabValues[R any](row *R) string {
+func generic_tabValues[R any](row *R) string {
 	var s []string
 	v := reflect.ValueOf(*row)
 	for i := range v.NumField() {
@@ -99,20 +107,17 @@ func tabValues[R any](row *R) string {
 	return strings.Join(s, "\t")
 }
 
-type table[R any] struct {
-	rows []*R
+type WritableTableRow[R any] interface {
+	TitleRow() R // why not just return a string here too?
+	String() string
 }
 
-func (t *table[R]) append(row *R) {
-	t.rows = append(t.rows, row)
-}
-
-func (t *table[R]) write() {
+func write[R WritableTableRow[R]](rows []R) {
 	tw := tabwriter.NewWriter(os.Stdout, tableMinWidth, tableTabWidth, tablePadding, tablePadChar, tableFlags)
-	titles := getTitleRow(t.rows[0])
-	fmt.Fprintln(tw, tabValues(titles))
-	for _, row := range t.rows {
-		fmt.Fprintln(tw, tabValues(row))
+	titles := rows[0].TitleRow()
+	fmt.Fprintln(tw, titles.String())
+	for _, row := range rows {
+		fmt.Fprintln(tw, row.String())
 	}
 	tw.Flush()
 }
@@ -132,7 +137,7 @@ func main() {
 		panic("No nodes found")
 	}
 
-	var tbl table[tableRow]
+	var tbl []*tableRow
 	warnings := make(map[string][]string)
 	for _, node := range nodes.Items {
 		var row tableRow
@@ -179,11 +184,11 @@ func main() {
 			node.Labels["eks.amazonaws.com/nodegroup"],
 		)
 
-		tbl.append(&row)
+		tbl = append(tbl, &row)
 	}
 
 	// Sort function to sort the rows slice by InstanceGroup, then AZ, then Name when iterating through it.
-	slices.SortFunc(tbl.rows, func(a, b *tableRow) int {
+	slices.SortFunc(tbl, func(a, b *tableRow) int {
 		return cmp.Or(
 			cmp.Compare(a.InstanceGroup, b.InstanceGroup),
 			cmp.Compare(a.AZ, b.AZ),
@@ -192,7 +197,7 @@ func main() {
 	})
 
 	// Display the table.
-	tbl.write()
+	write(tbl)
 
 	// Display any warning messages for the nodes.
 	for nodeName, warnArray := range warnings {
