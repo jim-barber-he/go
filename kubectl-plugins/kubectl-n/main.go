@@ -71,16 +71,17 @@ type tableRow struct {
 }
 
 func (tr *tableRow) String() string {
-	return generic_tabValues(tr)
+	return reflectedTabValues(tr)
 }
 
-func (tr *tableRow) TitleRow() *tableRow {
-	return generic_getTitleRow(tr)
+func (tr *tableRow) TitleRow() string {
+	titleRow := reflectedTitleRow(tr)
+	return reflectedTabValues(titleRow)
 }
 
 // Returns a new row with the field values populated via the struct tag called 'title'.
 // If the row field is unset and the title tag is set to 'omitempty' then do not include it.
-func generic_getTitleRow[R any](row *R) *R {
+func reflectedTitleRow[R any](row *R) *R {
 	var result R
 	resultElem := reflect.ValueOf(&result).Elem()
 
@@ -96,7 +97,7 @@ func generic_getTitleRow[R any](row *R) *R {
 }
 
 // Output the fields of the row struct separated by tabs. Empty fields are ignored.
-func generic_tabValues[R any](row *R) string {
+func reflectedTabValues[R any](row *R) string {
 	var s []string
 	v := reflect.ValueOf(*row)
 	for i := range v.NumField() {
@@ -107,15 +108,17 @@ func generic_tabValues[R any](row *R) string {
 	return strings.Join(s, "\t")
 }
 
-type WritableTableRow[R any] interface {
-	TitleRow() R // why not just return a string here too?
+type WritableTableRow interface {
+	TitleRow() string
 	String() string
 }
 
-func write[R WritableTableRow[R]](rows []R) {
+func write[R WritableTableRow](rows []R) {
+	if len(rows) == 0 {
+		return
+	}
 	tw := tabwriter.NewWriter(os.Stdout, tableMinWidth, tableTabWidth, tablePadding, tablePadChar, tableFlags)
-	titles := rows[0].TitleRow()
-	fmt.Fprintln(tw, titles.String())
+	fmt.Fprintln(tw, rows[0].TitleRow())
 	for _, row := range rows {
 		fmt.Fprintln(tw, row.String())
 	}
