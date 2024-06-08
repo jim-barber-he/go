@@ -49,13 +49,6 @@ var goodStatuses = map[v1.NodeConditionType]v1.ConditionStatus{
 	"Ready":                 "True",
 }
 
-// Interface that a table row struct needs to implement for the table.write() method to be able to use it.
-// Both of these methods need to return a string containing tab separated row values for the tabwriter module to use.
-type tableFormatter interface {
-	getTitleRow() tableFormatter
-	tabValues() string
-}
-
 type tableRow struct {
 	Name          string `title:"NAME"`
 	Ok            string `title:"OK"`
