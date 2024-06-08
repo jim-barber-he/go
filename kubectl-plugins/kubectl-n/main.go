@@ -81,7 +81,7 @@ func (r *tableRow) getTitleRow() *tableRow {
 	return &row
 }
 
-// Output the field values of the tableRow struct separated by tabs. Empty fields are ignored.
+// Output the field values of the table row struct separated by tabs. Empty fields are ignored.
 func (r *tableRow) tabValues() string {
 	var s []string
 	v := reflect.ValueOf(*r)
@@ -94,24 +94,20 @@ func (r *tableRow) tabValues() string {
 	return strings.Join(s, "\t")
 }
 
-type table struct {
-	rows []*tableRow
+type tableFormatter interface {
+	getTitleRow() *tableFormatter
+	tabValues() string
 }
 
-func (t *table) append(r *tableRow) {
+type table[R tableFormatter] struct {
+	rows []*R
+}
+
+func (t *table[R]) append(r *R) {
 	t.rows = append(t.rows, r)
 }
 
-func (t *table) write() {
-	// Sort function to sort the rows slice by InstanceGroup, then AZ, then Name when iterating through it.
-	slices.SortFunc(t.rows, func(a, b *tableRow) int {
-		return cmp.Or(
-			cmp.Compare(a.InstanceGroup, b.InstanceGroup),
-			cmp.Compare(a.AZ, b.AZ),
-			cmp.Compare(a.Name, b.Name),
-		)
-	})
-
+func (t *table[R]) write() {
 	tw := tabwriter.NewWriter(os.Stdout, tableMinWidth, tableTabWidth, tablePadding, tablePadChar, tableFlags)
 	titles := t.rows[0].getTitleRow()
 	fmt.Fprintln(tw, titles.tabValues())
@@ -136,7 +132,7 @@ func main() {
 		panic("No nodes found")
 	}
 
-	var tbl table
+	var tbl table[tableRow]
 	warnings := make(map[string][]string)
 	for _, node := range nodes.Items {
 		var row tableRow
@@ -185,6 +181,15 @@ func main() {
 
 		tbl.append(&row)
 	}
+
+	// Sort function to sort the rows slice by InstanceGroup, then AZ, then Name when iterating through it.
+	slices.SortFunc(tbl.rows, func(a, b *tableRow) int {
+		return cmp.Or(
+			cmp.Compare(a.InstanceGroup, b.InstanceGroup),
+			cmp.Compare(a.AZ, b.AZ),
+			cmp.Compare(a.Name, b.Name),
+		)
+	})
 
 	// Display the table.
 	tbl.write()
