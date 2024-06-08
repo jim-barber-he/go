@@ -19,6 +19,9 @@ install:
 lint:
 	golangci-lint run
 
+lintall:
+	golangci-lint run --enable-all
+
 run: build
 	./${BINARY_NAME}-${ARCH}
 
