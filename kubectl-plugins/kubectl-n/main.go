@@ -65,7 +65,7 @@ type tableRow struct {
 
 // Returns a new table row with the field values populated via the struct tag called 'title'.
 // If the table row field is unset and the title tag is set to 'omitempty' then do not include it.
-func (r *tableRow) getTitleRow() *tableRow {
+func (r *tableRow) getTitleRow() tableFormatter {
 	var row tableRow
 	rowElem := reflect.ValueOf(&row).Elem()
 
@@ -95,15 +95,15 @@ func (r *tableRow) tabValues() string {
 }
 
 type tableFormatter interface {
-	getTitleRow() *tableFormatter
+	getTitleRow() tableFormatter
 	tabValues() string
 }
 
 type table[R tableFormatter] struct {
-	rows []*R
+	rows []R
 }
 
-func (t *table[R]) append(r *R) {
+func (t *table[R]) append(r R) {
 	t.rows = append(t.rows, r)
 }
 
@@ -132,7 +132,7 @@ func main() {
 		panic("No nodes found")
 	}
 
-	var tbl table[tableRow]
+	var tbl table[*tableRow]
 	warnings := make(map[string][]string)
 	for _, node := range nodes.Items {
 		var row tableRow
