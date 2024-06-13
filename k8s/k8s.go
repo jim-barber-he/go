@@ -5,6 +5,7 @@ package k8s
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	v1 "k8s.io/api/core/v1"
@@ -13,6 +14,8 @@ import (
 	restclient "k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
 )
+
+var errGettingNodes = errors.New("error getting nodes")
 
 // Based on clientcmd.BuildConfigFromFlags from the kubernetes go-client but with the added `context` parameter to set
 // `CurrentContext`, and with the unneeded masterUrl parameter removed.
@@ -47,7 +50,7 @@ func Client(kubeContext string) *kubernetes.Clientset {
 func ListNodes(client kubernetes.Interface) (*v1.NodeList, error) {
 	nodes, err := client.CoreV1().Nodes().List(context.Background(), metav1.ListOptions{})
 	if err != nil {
-		err = fmt.Errorf("error getting nodes: %v", err)
+		err = fmt.Errorf("%w: %w", errGettingNodes, err)
 		return nil, err
 	}
 	return nodes, nil
