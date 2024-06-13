@@ -9,32 +9,18 @@ package main
 import (
 	"cmp"
 	"fmt"
-	"os"
-	"reflect"
 	"slices"
 	"strings"
-	"text/tabwriter"
-	"time"
 
 	"github.com/jim-barber-he/go/k8s"
+	"github.com/jim-barber-he/go/texttable"
+	"github.com/jim-barber-he/go/util"
+
 	flag "github.com/spf13/pflag"
 	v1 "k8s.io/api/core/v1"
 )
 
-const (
-	numSecondsPerWeek   = 60 * 60 * 24 * 7
-	numSecondsPerDay    = 60 * 60 * 24
-	numSecondsPerHour   = 60 * 60
-	numSecondsPerMinute = 60
-
-	tableFlags    = 0
-	tableMinWidth = 0
-	tablePadChar  = ' '
-	tablePadding  = 2
-	tableTabWidth = 8
-
-	tick = "\u2713"
-)
+const tick = "\u2713"
 
 // Is there a better way than defining this as a global var?
 var goodStatuses = map[v1.NodeConditionType]v1.ConditionStatus{
@@ -47,13 +33,6 @@ var goodStatuses = map[v1.NodeConditionType]v1.ConditionStatus{
 	"PIDPressure":           "False",
 	"ReadonlyFilesystem":    "False",
 	"Ready":                 "True",
-}
-
-// Interface that a table row struct needs to implement for the table.write() method to be able to use it.
-// Both of these methods need to return a string containing tab separated row values for the tabwriter module to use.
-type tableFormatter interface {
-	getTitleRow() tableFormatter
-	tabValues() string
 }
 
 type tableRow struct {
@@ -70,51 +49,14 @@ type tableRow struct {
 	InstanceGroup string `title:"INSTANCE-GROUP,omitempty"`
 }
 
-// Returns a new table row with the field values populated via the struct tag called 'title'.
-// If the table row field is unset and the title tag is set to 'omitempty' then do not include it.
-func (r *tableRow) getTitleRow() tableFormatter {
-	var row tableRow
-	rowElem := reflect.ValueOf(&row).Elem()
-
-	v := reflect.ValueOf(*r)
-	for i, sf := range reflect.VisibleFields(v.Type()) {
-		titleArray := strings.Split(sf.Tag.Get("title"), ",")
-		if len(titleArray) > 1 && titleArray[1] == "omitempty" && v.Field(i).String() == "" {
-			continue
-		}
-		rowElem.Field(i).SetString(titleArray[0])
-	}
-	return &row
+// Implement the texttab.tableFormatter interface.
+func (tr *tableRow) TabTitleRow() string {
+	return texttable.ReflectedTitleRow(tr)
 }
 
-// Output the field values of the tableRow struct separated by tabs. Empty fields are ignored.
-func (r *tableRow) tabValues() string {
-	var s []string
-	v := reflect.ValueOf(*r)
-	for i := range v.NumField() {
-		if str := strings.TrimSpace(v.Field(i).String()); str != "" {
-			s = append(s, str)
-		}
-	}
-	return strings.Join(s, "\t")
-}
-
-type table[R tableFormatter] struct {
-	rows []R
-}
-
-func (t *table[R]) append(r R) {
-	t.rows = append(t.rows, r)
-}
-
-func (t *table[R]) write() {
-	tw := tabwriter.NewWriter(os.Stdout, tableMinWidth, tableTabWidth, tablePadding, tablePadChar, tableFlags)
-	titles := t.rows[0].getTitleRow()
-	fmt.Fprintln(tw, titles.tabValues())
-	for _, row := range t.rows {
-		fmt.Fprintln(tw, row.tabValues())
-	}
-	tw.Flush()
+// Implement the texttab.tableFormatter interface.
+func (tr *tableRow) TabValues() string {
+	return texttable.ReflectedTabValues(tr)
 }
 
 func main() {
@@ -132,7 +74,7 @@ func main() {
 		panic("No nodes found")
 	}
 
-	var tbl table[*tableRow]
+	var tbl texttable.Table[*tableRow]
 	warnings := make(map[string][]string)
 	for _, node := range nodes.Items {
 		var row tableRow
@@ -148,9 +90,9 @@ func main() {
 		}
 		row.Ok = status
 
-		row.Age = formatAge(node.CreationTimestamp.Time)
+		row.Age = util.FormatAge(node.CreationTimestamp.Time)
 		row.Version = node.Status.NodeInfo.KubeletVersion
-		row.Runtime = lastSplitItem(node.Status.NodeInfo.ContainerRuntimeVersion, "/")
+		row.Runtime = util.LastSplitItem(node.Status.NodeInfo.ContainerRuntimeVersion, "/")
 
 		// Additional columns for AWS EC2 instances are from this point on.
 
@@ -162,13 +104,13 @@ func main() {
 			row.Spot = "x"
 		}
 
-		row.AZ = lastSplitItem(node.Labels["topology.kubernetes.io/zone"], "")
+		row.AZ = util.LastSplitItem(node.Labels["topology.kubernetes.io/zone"], "")
 
 		// The external AWS controller manager sets the node names to the Instance ID,
 		// while the old AWS code in k8s sets it to the DNS name that contains the IP address.
 		// Depending on which one is used will determine if the InstanceID or IP value is set.
 		if strings.HasPrefix(node.Name, "ip-") {
-			row.InstanceID = lastSplitItem(node.Spec.ProviderID, "/")
+			row.InstanceID = util.LastSplitItem(node.Spec.ProviderID, "/")
 		} else {
 			row.IP = node.Annotations["alpha.kubernetes.io/provided-node-ip"]
 		}
@@ -179,11 +121,11 @@ func main() {
 			node.Labels["eks.amazonaws.com/nodegroup"],
 		)
 
-		tbl.append(&row)
+		tbl.Append(&row)
 	}
 
 	// Sort function to sort the rows slice by InstanceGroup, then AZ, then Name when iterating through it.
-	slices.SortFunc(tbl.rows, func(a, b *tableRow) int {
+	slices.SortFunc(tbl.Rows, func(a, b *tableRow) int {
 		return cmp.Or(
 			cmp.Compare(a.InstanceGroup, b.InstanceGroup),
 			cmp.Compare(a.AZ, b.AZ),
@@ -192,7 +134,7 @@ func main() {
 	})
 
 	// Display the table.
-	tbl.write()
+	tbl.Write()
 
 	// Display any warning messages for the nodes.
 	for nodeName, warnArray := range warnings {
@@ -203,59 +145,6 @@ func main() {
 			}
 		}
 	}
-}
-
-// Return the age in a human readable format of the first 2 non-zero time units from weeks to seconds,
-// or just the seconds if no higher time unit was above 0.
-// This differs from duration.String() in that it also handles weeks and days.
-func formatAge(timestamp time.Time) string {
-	var weeks, days, hours, minutes, seconds int
-
-	duration := time.Since(timestamp).Round(time.Second)
-
-	seconds = int(duration.Seconds())
-
-	weeks = seconds / numSecondsPerWeek
-	seconds -= weeks * numSecondsPerWeek
-
-	days = seconds / numSecondsPerDay
-	seconds -= days * numSecondsPerDay
-
-	hours = seconds / numSecondsPerHour
-	seconds -= hours * numSecondsPerHour
-
-	minutes = seconds / numSecondsPerMinute
-	seconds -= minutes * numSecondsPerMinute
-
-	var dateStr string
-	// When set to true, return as soon as the next non-zero time unit is set.
-	var retNext bool
-
-	if weeks > 0 {
-		dateStr = fmt.Sprintf("%dw", weeks)
-		retNext = true
-	}
-	if days > 0 {
-		dateStr = fmt.Sprintf("%s%dd", dateStr, days)
-		if retNext {
-			return dateStr
-		}
-		retNext = true
-	}
-	if hours > 0 {
-		dateStr = fmt.Sprintf("%s%dh", dateStr, hours)
-		if retNext {
-			return dateStr
-		}
-		retNext = true
-	}
-	if minutes > 0 {
-		dateStr = fmt.Sprintf("%s%dm", dateStr, minutes)
-		if retNext {
-			return dateStr
-		}
-	}
-	return fmt.Sprintf("%s%ds", dateStr, seconds)
 }
 
 // Looks at the conditions of a node and returns the node's status and any warning messages associated with it.
@@ -276,13 +165,4 @@ func getNodeStatus(conditions []v1.NodeCondition) (string, []string) {
 		status = "x"
 	}
 	return status, messages
-}
-
-// lastSplitItem() splits a string into a slice based on a split character and returns the last item.
-func lastSplitItem(str, splitChar string) string {
-	result := strings.Split(str, splitChar)
-	if len(result) > 0 {
-		return result[len(result)-1]
-	}
-	return ""
 }
