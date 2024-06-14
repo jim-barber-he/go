@@ -10,10 +10,10 @@ import (
 )
 
 const (
-	numSecondsPerWeek   = 60 * 60 * 24 * 7
-	numSecondsPerDay    = 60 * 60 * 24
-	numSecondsPerHour   = 60 * 60
 	numSecondsPerMinute = 60
+	numSecondsPerHour   = 60 * numSecondsPerMinute
+	numSecondsPerDay    = 24 * numSecondsPerHour
+	numSecondsPerWeek   = 7 * numSecondsPerDay
 )
 
 // Return the age in a human readable format of the first 2 non-zero time units from weeks to seconds,
