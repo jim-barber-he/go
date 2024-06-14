@@ -21,12 +21,12 @@ const (
 
 // Interface that a table row struct needs to implement for the table.Write() method to be able to use it.
 // Both of these methods need to return a string containing tab separated row values for the tabwriter module to use.
-type tableFormatter interface {
+type TableFormatter interface {
 	TabTitleRow() string
 	TabValues() string
 }
 
-type Table[R tableFormatter] struct {
+type Table[R TableFormatter] struct {
 	Rows []R
 }
 

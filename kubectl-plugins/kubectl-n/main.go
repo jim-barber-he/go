@@ -9,6 +9,7 @@ package main
 import (
 	"cmp"
 	"fmt"
+	"os"
 	"slices"
 	"strings"
 
@@ -22,7 +23,6 @@ import (
 
 const tick = "\u2713"
 
-// Is there a better way than defining this as a global var?
 var goodStatuses = map[v1.NodeConditionType]v1.ConditionStatus{
 	"CorruptDockerOverlay2": "False",
 	"DiskPressure":          "False",
@@ -49,12 +49,12 @@ type tableRow struct {
 	InstanceGroup string `title:"INSTANCE-GROUP,omitempty"`
 }
 
-// Implement the texttab.tableFormatter interface.
+// Implement the texttab.TableFormatter interface.
 func (tr *tableRow) TabTitleRow() string {
 	return texttable.ReflectedTitleRow(tr)
 }
 
-// Implement the texttab.tableFormatter interface.
+// Implement the texttab.TableFormatter interface.
 func (tr *tableRow) TabValues() string {
 	return texttable.ReflectedTabValues(tr)
 }
@@ -68,10 +68,12 @@ func main() {
 
 	nodes, err := k8s.ListNodes(clientset)
 	if err != nil {
-		panic(err.Error())
+		fmt.Fprintf(os.Stderr, "%s", err)
+		os.Exit(1)
 	}
 	if len(nodes.Items) == 0 {
-		panic("No nodes found")
+		fmt.Fprintf(os.Stderr, "No nodes found")
+		os.Exit(1)
 	}
 
 	var tbl texttable.Table[*tableRow]
