@@ -119,9 +119,12 @@ func main() {
 		tbl.Append(&row)
 	}
 
-	// Sort function to sort the rows slice by Name when iterating through it.
+	// Sort function to sort the rows slice by Namespace and then Name when iterating through it.
 	slices.SortFunc(tbl.Rows, func(a, b *tableRow) int {
-		return cmp.Compare(a.Name, b.Name)
+		return cmp.Or(
+			cmp.Compare(a.Namespace, b.Namespace),
+			cmp.Compare(a.Name, b.Name),
+		)
 	})
 
 	// Display the table.
