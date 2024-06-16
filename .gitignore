@@ -1,2 +1,3 @@
 *.swp
 kubectl-plugins/kubectl-n/kubectl-n*
+kubectl-plugins/kubectl-n/kubectl-p*
