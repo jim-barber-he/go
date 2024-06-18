@@ -65,11 +65,11 @@ func main() {
 
 	pods, err := k8s.ListPods(clientset, namespace, labelSelector)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "%s", err)
+		fmt.Fprintf(os.Stderr, "%s\n", err)
 		os.Exit(1)
 	}
 	if len(pods.Items) == 0 {
-		fmt.Fprintf(os.Stderr, "No pods found")
+		fmt.Fprintln(os.Stderr, "No pods found")
 		os.Exit(1)
 	}
 
@@ -78,13 +78,14 @@ func main() {
 	for _, pod := range pods.Items {
 		var row tableRow
 
-		// Find out what node the pod is on and get its details if we haven't already.
+		// Try to find out what node the pod is on and get its details if we haven't already.
 		node := pod.Spec.NodeName
-		if _, ok := nodes[node]; !ok {
-			nodes[node], err = k8s.GetNode(clientset, node)
-			if err != nil {
-				fmt.Fprintf(os.Stderr, "%s", err)
-				os.Exit(1)
+		if node != "" {
+			if _, ok := nodes[node]; !ok {
+				nodePtr, err := k8s.GetNode(clientset, node)
+				if err == nil {
+					nodes[node] = nodePtr
+				}
 			}
 		}
 		numContainers := len(pod.Status.ContainerStatuses)
@@ -108,13 +109,22 @@ func main() {
 		row.Restarts = strconv.Itoa(restarts)
 		row.Age = util.FormatAge(pod.CreationTimestamp.Time)
 		row.IP = pod.Status.PodIP
-		row.Node = node
-		if nodes[node].Labels["node-role.kubernetes.io/spot-worker"] != "" {
-			row.Spot = tick
-		} else {
-			row.Spot = "x"
+		if row.IP == "" {
+			row.IP = "?"
 		}
-		row.AZ = util.LastSplitItem(nodes[node].Labels["topology.kubernetes.io/zone"], "")
+		if node != "" {
+			row.Node = node
+			if _, ok := nodes[node]; ok {
+				if nodes[node].Labels["node-role.kubernetes.io/spot-worker"] != "" {
+					row.Spot = tick
+				} else {
+					row.Spot = "x"
+				}
+				row.AZ = util.LastSplitItem(nodes[node].Labels["topology.kubernetes.io/zone"], "")
+			} else {
+				row.Node += " (gone)"
+			}
+		}
 
 		tbl.Append(&row)
 	}
