@@ -8,14 +8,15 @@ package main
 import (
 	"cmp"
 	"fmt"
+	"log"
 	"os"
+	"runtime"
+	"runtime/pprof"
 	"slices"
-	"strconv"
 
 	"github.com/jim-barber-he/go/k8s"
 	"github.com/jim-barber-he/go/texttable"
 	"github.com/jim-barber-he/go/util"
-
 	flag "github.com/spf13/pflag"
 	v1 "k8s.io/api/core/v1"
 )
@@ -46,72 +47,77 @@ func (tr *tableRow) TabValues() string {
 }
 
 func main() {
-	var allNamespaces bool
-	var kubeContext string
-	var labelSelector string
-
-	flag.BoolVarP(&allNamespaces, "all-namespaces", "A", false, "List the pods across all namespaces")
-	flag.StringVar(&kubeContext, "context", "", "The name of the kubeconfig context to use")
-	flag.StringVarP(&labelSelector, "selector", "l", "", "Selector (label query) to filter on")
+	allNamespaces := flag.BoolP("all-namespaces", "A", false, "List the pods across all namespaces")
+	cpuProfile := flag.String("cpuprofile", "", "Produce pprof cpu profiling output in supplied file")
+	kubeContext := flag.String("context", "", "The name of the kubeconfig context to use")
+	labelSelector := flag.StringP("selector", "l", "", "Selector (label query) to filter on")
+	memProfile := flag.String("memprofile", "", "Produce pprof memory profiling output in supplied file")
 
 	flag.Parse()
 
-	clientset := k8s.Client(kubeContext)
+	// CPU profiling.
+	if *cpuProfile != "" {
+		f, err := os.Create(*cpuProfile)
+		if err != nil {
+			log.Println(err)
+			return
+		}
+		defer f.Close()
+		if err := pprof.StartCPUProfile(f); err != nil {
+			log.Println(err)
+			return
+		}
+		defer pprof.StopCPUProfile()
+	}
+
+	clientset := k8s.Client(*kubeContext)
 
 	namespace := ""
-	if !allNamespaces {
-		namespace = k8s.Namespace(kubeContext)
+	if !*allNamespaces {
+		namespace = k8s.Namespace(*kubeContext)
 	}
 
-	pods, err := k8s.ListPods(clientset, namespace, labelSelector)
+	nodeList, err := k8s.ListNodes(clientset)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "%s\n", err)
-		os.Exit(1)
+		log.Println(err)
+		return
+	}
+	nodes := make(map[string]*v1.Node)
+	for i, node := range nodeList.Items {
+		nodes[node.Name] = &nodeList.Items[i]
+	}
+
+	pods, err := k8s.ListPods(clientset, namespace, *labelSelector)
+	if err != nil {
+		log.Println(err)
+		return
 	}
 	if len(pods.Items) == 0 {
-		fmt.Fprintln(os.Stderr, "No pods found")
-		os.Exit(1)
+		log.Println("No pods found")
+		return
 	}
 
 	var tbl texttable.Table[*tableRow]
-	nodes := make(map[string]*v1.Node)
-	for _, pod := range pods.Items {
+	for i, pod := range pods.Items {
 		var row tableRow
 
-		// Try to find out what node the pod is on and get its details if we haven't already.
-		node := pod.Spec.NodeName
-		if node != "" {
-			if _, ok := nodes[node]; !ok {
-				nodePtr, err := k8s.GetNode(clientset, node)
-				if err == nil {
-					nodes[node] = nodePtr
-				}
-			}
-		}
-		numContainers := len(pod.Status.ContainerStatuses)
-		numReady := 0
-		restarts := 0
-		for _, containerStatus := range pod.Status.ContainerStatuses {
-			if containerStatus.Ready {
-				numReady++
-			}
-			if containerStatus.RestartCount > 0 {
-				restarts += int(containerStatus.RestartCount)
-			}
-		}
+		// Get details about the containers in the pod.
+		readyContainers, totalContainers, status, restarts := k8s.PodDetails(&pods.Items[i])
 
-		if allNamespaces {
+		// Build up the table contents.
+		if *allNamespaces {
 			row.Namespace = pod.Namespace
 		}
 		row.Name = pod.Name
-		row.Ready = fmt.Sprintf("%d/%d", numReady, numContainers)
-		row.Status = string(pod.Status.Phase)
-		row.Restarts = strconv.Itoa(restarts)
+		row.Ready = fmt.Sprintf("%d/%d", readyContainers, totalContainers)
+		row.Status = status
+		row.Restarts = restarts
 		row.Age = util.FormatAge(pod.CreationTimestamp.Time)
 		row.IP = pod.Status.PodIP
 		if row.IP == "" {
 			row.IP = "?"
 		}
+		node := pod.Spec.NodeName
 		if node != "" {
 			row.Node = node
 			if _, ok := nodes[node]; ok {
@@ -139,4 +145,19 @@ func main() {
 
 	// Display the table.
 	tbl.Write()
+
+	// Memory profiling.
+	if *memProfile != "" {
+		f, err := os.Create(*memProfile)
+		if err != nil {
+			log.Println(err)
+			return
+		}
+		defer f.Close()
+		// Get up-to-date statistics.
+		runtime.GC()
+		if err := pprof.WriteHeapProfile(f); err != nil {
+			log.Println(err)
+		}
+	}
 }

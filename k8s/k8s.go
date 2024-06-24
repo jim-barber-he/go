@@ -7,11 +7,14 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strconv"
+	"time"
 
+	"github.com/jim-barber-he/go/util"
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
-	restclient "k8s.io/client-go/rest"
+	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
 )
 
@@ -23,7 +26,7 @@ var (
 
 // Based on clientcmd.BuildConfigFromFlags from the kubernetes go-client but with the added `context` parameter to set
 // `CurrentContext`, and with the unneeded masterUrl parameter removed.
-func buildConfigFromFlags(kubeconfigPath, context string) (*restclient.Config, error) {
+func buildConfigFromFlags(kubeconfigPath, context string) (*rest.Config, error) {
 	return clientcmd.NewNonInteractiveDeferredLoadingClientConfig(
 		&clientcmd.ClientConfigLoadingRules{ExplicitPath: kubeconfigPath},
 		&clientcmd.ConfigOverrides{
@@ -55,6 +58,39 @@ func GetNode(client kubernetes.Interface, node string) (*v1.Node, error) {
 		return nil, err
 	}
 	return nodePtr, nil
+}
+
+// hasPodReadyCondition returns true if the pod has a condition type of "Ready" with a status of "True".
+func hasPodReadyCondition(conditions []v1.PodCondition) bool {
+	for _, condition := range conditions {
+		if condition.Type == "Ready" && condition.Status == "True" {
+			return true
+		}
+	}
+	return false
+}
+
+// isPodInitializedConditionTrue returns true if the pod has a condition type of "Initialized" with a status of "True".
+func isPodInitializedConditionTrue(status *v1.PodStatus) bool {
+	for _, condition := range status.Conditions {
+		if condition.Type != "Initialized" {
+			continue
+		}
+		return condition.Status == "True"
+	}
+	return false
+}
+
+// isRestartableInitContainer returns true if an init container has its RestartPolicy set to "Always".
+func isRestartableInitContainer(initContainer *v1.Container) bool {
+	if initContainer == nil {
+		return false
+	}
+	if initContainer.RestartPolicy == nil {
+		return false
+	}
+
+	return *initContainer.RestartPolicy == "Always"
 }
 
 // KubeConfig returns the user's kube config file.
@@ -109,4 +145,145 @@ func Namespace(kubeContext string) string {
 		ns = "default"
 	}
 	return ns
+}
+
+// PodDetails returns details on pods as you would see in the READY, STATUS, and RESTARTS columns of kubectl output.
+// The READY would be built up via "readyContainers/totalContainers".
+// Based on: printPod() function in kubernetes/pkg/printers/internalversion/printers.go of kubernetes source code.
+func PodDetails(pod *v1.Pod) (readyContainers, totalContainers int, status, restarts string) {
+	restartCount := 0
+	restartableInitContainerRestarts := 0
+	totalContainers = len(pod.Spec.Containers)
+	readyContainers = 0
+	lastRestartDate := time.Time{}
+	lastRestartableInitContainerRestartDate := time.Time{}
+
+	podPhase := string(pod.Status.Phase)
+	status = podPhase
+	if pod.Status.Reason != "" {
+		status = pod.Status.Reason
+	}
+
+	// If the Pod carries {type:PodScheduled, reason:SchedulingGated}, set status to 'SchedulingGated'.
+	for _, condition := range pod.Status.Conditions {
+		if condition.Type == "PodScheduled" && condition.Reason == "SchedulingGated" {
+			status = "SchedulingGated"
+		}
+	}
+
+	initContainers := make(map[string]*v1.Container)
+	for i := range pod.Spec.InitContainers {
+		initContainers[pod.Spec.InitContainers[i].Name] = &pod.Spec.InitContainers[i]
+		if isRestartableInitContainer(&pod.Spec.InitContainers[i]) {
+			totalContainers++
+		}
+	}
+
+	initializing := false
+	for i, icStatus := range pod.Status.InitContainerStatuses {
+		restartCount += int(icStatus.RestartCount)
+		if icStatus.LastTerminationState.Terminated != nil {
+			terminatedDate := icStatus.LastTerminationState.Terminated.FinishedAt.Time
+			if lastRestartDate.Before(terminatedDate) {
+				lastRestartDate = terminatedDate
+			}
+		}
+		if isRestartableInitContainer(initContainers[icStatus.Name]) {
+			restartableInitContainerRestarts += int(icStatus.RestartCount)
+			if icStatus.LastTerminationState.Terminated != nil {
+				terminatedDate := icStatus.LastTerminationState.Terminated.FinishedAt.Time
+				if lastRestartableInitContainerRestartDate.Before(terminatedDate) {
+					lastRestartableInitContainerRestartDate = terminatedDate
+				}
+			}
+		}
+		switch {
+		case icStatus.State.Terminated != nil && icStatus.State.Terminated.ExitCode == 0:
+			continue
+		case isRestartableInitContainer(initContainers[icStatus.Name]) && icStatus.Started != nil && *icStatus.Started:
+			if icStatus.Ready {
+				readyContainers++
+			}
+			continue
+		case icStatus.State.Terminated != nil:
+			// Initialization has failed
+			if len(icStatus.State.Terminated.Reason) == 0 {
+				if icStatus.State.Terminated.Signal != 0 {
+					status = fmt.Sprintf("Init:Signal:%d", icStatus.State.Terminated.Signal)
+				} else {
+					status = fmt.Sprintf("Init:ExitCode:%d", icStatus.State.Terminated.ExitCode)
+				}
+			} else {
+				status = "Init:" + icStatus.State.Terminated.Reason
+			}
+			initializing = true
+		case icStatus.State.Waiting != nil &&
+			len(icStatus.State.Waiting.Reason) > 0 &&
+			icStatus.State.Waiting.Reason != "PodInitializing":
+			status = "Init:" + icStatus.State.Waiting.Reason
+			initializing = true
+		default:
+			status = fmt.Sprintf("Init:%d/%d", i, len(pod.Spec.InitContainers))
+			initializing = true
+		}
+		break
+	}
+
+	if !initializing || isPodInitializedConditionTrue(&pod.Status) {
+		restartCount = restartableInitContainerRestarts
+		lastRestartDate = lastRestartableInitContainerRestartDate
+		hasRunning := false
+		for i := len(pod.Status.ContainerStatuses) - 1; i >= 0; i-- {
+			cStatus := pod.Status.ContainerStatuses[i]
+
+			restartCount += int(cStatus.RestartCount)
+			if cStatus.LastTerminationState.Terminated != nil {
+				terminatedDate := cStatus.LastTerminationState.Terminated.FinishedAt.Time
+				if lastRestartDate.Before(terminatedDate) {
+					lastRestartDate = terminatedDate
+				}
+			}
+			switch {
+			case cStatus.State.Waiting != nil && cStatus.State.Waiting.Reason != "":
+				status = cStatus.State.Waiting.Reason
+			case cStatus.State.Terminated != nil:
+				if cStatus.State.Terminated.Reason != "" {
+					status = cStatus.State.Terminated.Reason
+				} else {
+					if cStatus.State.Terminated.Signal != 0 {
+						status = fmt.Sprintf("Signal:%d", cStatus.State.Terminated.Signal)
+					} else {
+						status = fmt.Sprintf("ExitCode:%d", cStatus.State.Terminated.ExitCode)
+					}
+				}
+			case cStatus.Ready && cStatus.State.Running != nil:
+				hasRunning = true
+				readyContainers++
+			}
+		}
+
+		// Change pod status back to "Running" if there is at least one container still reporting as "Running" status.
+		if status == "Completed" && hasRunning {
+			if hasPodReadyCondition(pod.Status.Conditions) {
+				status = "Running"
+			} else {
+				status = "NotReady"
+			}
+		}
+	}
+
+	if pod.DeletionTimestamp != nil {
+		if pod.Status.Reason == "NodeLost" {
+			status = "Unknown"
+		} else if podPhase != "Failed" && podPhase != "Succeeded" {
+			status = "Terminating"
+		}
+	}
+
+	restarts = strconv.Itoa(restartCount)
+	if restartCount != 0 && !lastRestartDate.IsZero() {
+		restarts += fmt.Sprintf(" (%s ago)", util.FormatAge(lastRestartDate))
+	}
+
+	return readyContainers, totalContainers, status, restarts
 }
