@@ -7,6 +7,7 @@ package main
 
 import (
 	"cmp"
+	"errors"
 	"fmt"
 	"log"
 	"os"
@@ -22,6 +23,8 @@ import (
 )
 
 const tick = "\u2713"
+
+var errNoPodsFound = errors.New("no pods found")
 
 type tableRow struct {
 	Namespace string `title:"NAMESPACE,omitempty"`
@@ -46,26 +49,39 @@ func (tr *tableRow) TabValues() string {
 	return texttable.ReflectedTabValues(tr)
 }
 
+// Have run() do the main work so that it can use defer statements,
+// while still giving us, the ability to use os.Exit(1) or log.Fatal*.
 func main() {
+	if err := run(); err != nil {
+		log.Fatalln(err)
+	}
+}
+
+// run is the main part of the program.
+func run() error {
+	// If the defer anonymous functions encounter an error, they can set this var to be returned to the calling function.
+	var deferErrors error
+
 	allNamespaces := flag.BoolP("all-namespaces", "A", false, "List the pods across all namespaces")
 	cpuProfile := flag.String("cpuprofile", "", "Produce pprof cpu profiling output in supplied file")
 	kubeContext := flag.String("context", "", "The name of the kubeconfig context to use")
 	labelSelector := flag.StringP("selector", "l", "", "Selector (label query) to filter on")
 	memProfile := flag.String("memprofile", "", "Produce pprof memory profiling output in supplied file")
-
 	flag.Parse()
 
 	// CPU profiling.
 	if *cpuProfile != "" {
-		f, err := os.Create(*cpuProfile)
+		fp, err := os.Create(*cpuProfile)
 		if err != nil {
-			log.Println(err)
-			return
+			return err
 		}
-		defer f.Close()
-		if err := pprof.StartCPUProfile(f); err != nil {
-			log.Println(err)
-			return
+		defer func(fp *os.File) {
+			if err := fp.Close(); err != nil {
+				deferErrors = errors.Join(err, deferErrors)
+			}
+		}(fp)
+		if err := pprof.StartCPUProfile(fp); err != nil {
+			return err
 		}
 		defer pprof.StopCPUProfile()
 	}
@@ -79,8 +95,7 @@ func main() {
 
 	nodeList, err := k8s.ListNodes(clientset)
 	if err != nil {
-		log.Println(err)
-		return
+		return err
 	}
 	nodes := make(map[string]*v1.Node)
 	for i, node := range nodeList.Items {
@@ -89,12 +104,10 @@ func main() {
 
 	pods, err := k8s.ListPods(clientset, namespace, *labelSelector)
 	if err != nil {
-		log.Println(err)
-		return
+		return err
 	}
 	if len(pods.Items) == 0 {
-		log.Println("No pods found")
-		return
+		return errNoPodsFound
 	}
 
 	var tbl texttable.Table[*tableRow]
@@ -148,16 +161,21 @@ func main() {
 
 	// Memory profiling.
 	if *memProfile != "" {
-		f, err := os.Create(*memProfile)
+		fp, err := os.Create(*memProfile)
 		if err != nil {
-			log.Println(err)
-			return
+			return err
 		}
-		defer f.Close()
+		defer func(fp *os.File) {
+			if err := fp.Close(); err != nil {
+				deferErrors = errors.Join(err, deferErrors)
+			}
+		}(fp)
 		// Get up-to-date statistics.
 		runtime.GC()
-		if err := pprof.WriteHeapProfile(f); err != nil {
-			log.Println(err)
+		if err := pprof.WriteHeapProfile(fp); err != nil {
+			return err
 		}
 	}
+
+	return deferErrors
 }
