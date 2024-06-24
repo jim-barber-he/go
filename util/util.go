@@ -5,6 +5,7 @@ package util
 
 import (
 	"fmt"
+	"os"
 	"strings"
 	"time"
 )
@@ -16,7 +17,7 @@ const (
 	numSecondsPerWeek   = 7 * numSecondsPerDay
 )
 
-// Return the age in a human readable format of the first 2 non-zero time units from weeks to seconds,
+// FormatAge returns the age in a human readable format of the first 2 non-zero time units from weeks to seconds,
 // or just the seconds if no higher time unit was above 0.
 // This differs from duration.String() in that it also handles weeks and days.
 func FormatAge(timestamp time.Time) string {
@@ -69,11 +70,17 @@ func FormatAge(timestamp time.Time) string {
 	return fmt.Sprintf("%s%ds", dateStr, seconds)
 }
 
-// LastSplitItem() splits a string into a slice based on a split character and returns the last item.
+// LastSplitItem splits a string into a slice based on a split character and returns the last item.
 func LastSplitItem(str, splitChar string) string {
 	result := strings.Split(str, splitChar)
 	if len(result) > 0 {
 		return result[len(result)-1]
 	}
 	return ""
+}
+
+// TimeTaken is designed to be called via a defer statement to show elapsed time for things like functions/methods.
+// e.g. put something like the this at the top of your function: `defer util.TimeTaken(time.Now(), "functionName")`.
+func TimeTaken(start time.Time, name string) {
+	fmt.Fprintf(os.Stderr, "%s took %s\n", name, time.Since(start))
 }

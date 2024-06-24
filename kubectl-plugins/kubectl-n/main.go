@@ -9,14 +9,13 @@ package main
 import (
 	"cmp"
 	"fmt"
-	"os"
+	"log"
 	"slices"
 	"strings"
 
 	"github.com/jim-barber-he/go/k8s"
 	"github.com/jim-barber-he/go/texttable"
 	"github.com/jim-barber-he/go/util"
-
 	flag "github.com/spf13/pflag"
 	v1 "k8s.io/api/core/v1"
 )
@@ -60,20 +59,17 @@ func (tr *tableRow) TabValues() string {
 }
 
 func main() {
-	var kubeContext string
-	flag.StringVar(&kubeContext, "context", "", "The name of the kubeconfig context to use")
+	kubeContext := flag.String("context", "", "The name of the kubeconfig context to use")
 	flag.Parse()
 
-	clientset := k8s.Client(kubeContext)
+	clientset := k8s.Client(*kubeContext)
 
 	nodes, err := k8s.ListNodes(clientset)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "%s", err)
-		os.Exit(1)
+		log.Fatal(err)
 	}
 	if len(nodes.Items) == 0 {
-		fmt.Fprintf(os.Stderr, "No nodes found")
-		os.Exit(1)
+		log.Fatal("No nodes found")
 	}
 
 	var tbl texttable.Table[*tableRow]
@@ -156,7 +152,7 @@ func getNodeStatus(conditions []v1.NodeCondition) (string, []string) {
 	status := tick
 	for _, condition := range conditions {
 		if _, ok := goodStatuses[condition.Type]; !ok {
-			fmt.Printf("Warning, we haven't covered all conditions - Please add %s to goodStatuses", condition.Type)
+			log.Printf("Warning, we haven't covered all conditions - Please add %s to goodStatuses", condition.Type)
 			continue
 		}
 		if condition.Status != goodStatuses[condition.Type] {
