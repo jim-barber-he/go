@@ -7,6 +7,7 @@ package main
 
 import (
 	"cmp"
+	"errors"
 	"fmt"
 	"log"
 	"os"
@@ -22,6 +23,8 @@ import (
 )
 
 const tick = "\u2713"
+
+var errNoPodsFound = errors.New("no pods found")
 
 type tableRow struct {
 	Namespace string `title:"NAMESPACE,omitempty"`
@@ -46,55 +49,78 @@ func (tr *tableRow) TabValues() string {
 	return texttable.ReflectedTabValues(tr)
 }
 
-func main() {
-	allNamespaces := flag.BoolP("all-namespaces", "A", false, "List the pods across all namespaces")
-	cpuProfile := flag.String("cpuprofile", "", "Produce pprof cpu profiling output in supplied file")
-	kubeContext := flag.String("context", "", "The name of the kubeconfig context to use")
-	labelSelector := flag.StringP("selector", "l", "", "Selector (label query) to filter on")
-	memProfile := flag.String("memprofile", "", "Produce pprof memory profiling output in supplied file")
+// Commandline options.
+type options struct {
+	allNamespaces *bool
+	kubeContext   *string
+	labelSelector *string
+	profileCPU    *string
+	profileMemory *string
+}
 
+func main() {
+	var opts options
+
+	opts.allNamespaces = flag.BoolP("all-namespaces", "A", false, "List the pods across all namespaces")
+	opts.kubeContext = flag.String("context", "", "The name of the kubeconfig context to use")
+	opts.labelSelector = flag.StringP("selector", "l", "", "Selector (label query) to filter on")
+	opts.profileCPU = flag.String("profile-cpu", "", "Produce pprof cpu profiling output in supplied file")
+	opts.profileMemory = flag.String("profile-mem", "", "Produce pprof memory profiling output in supplied file")
 	flag.Parse()
 
+	// Have run() do the main work so that it can use defer statements,
+	// while still giving us, the ability to use os.Exit(1) or log.Fatal*.
+	if err := run(opts); err != nil {
+		log.Fatalln(err)
+	}
+}
+
+// run is the main part of the program.
+// Error handling isn't perfect here, and not sure how to do it better.
+// If an error is returned early, then I guess any errors from the defer functions will be lost.
+func run(opts options) error {
+	// If the defer anonymous functions encounter an error, they can set this var to be returned to the calling function.
+	var deferErrors error
+
 	// CPU profiling.
-	if *cpuProfile != "" {
-		f, err := os.Create(*cpuProfile)
+	if *opts.profileCPU != "" {
+		fp, err := os.Create(*opts.profileCPU)
 		if err != nil {
-			log.Println(err)
-			return
+			return err
 		}
-		defer f.Close()
-		if err := pprof.StartCPUProfile(f); err != nil {
-			log.Println(err)
-			return
+		defer func(fp *os.File) {
+			if err := fp.Close(); err != nil {
+				deferErrors = errors.Join(err, deferErrors)
+			}
+		}(fp)
+		if err := pprof.StartCPUProfile(fp); err != nil {
+			return err
 		}
 		defer pprof.StopCPUProfile()
 	}
 
-	clientset := k8s.Client(*kubeContext)
+	clientset := k8s.Client(*opts.kubeContext)
 
 	namespace := ""
-	if !*allNamespaces {
-		namespace = k8s.Namespace(*kubeContext)
+	if !*opts.allNamespaces {
+		namespace = k8s.Namespace(*opts.kubeContext)
 	}
 
 	nodeList, err := k8s.ListNodes(clientset)
 	if err != nil {
-		log.Println(err)
-		return
+		return err
 	}
 	nodes := make(map[string]*v1.Node)
 	for i, node := range nodeList.Items {
 		nodes[node.Name] = &nodeList.Items[i]
 	}
 
-	pods, err := k8s.ListPods(clientset, namespace, *labelSelector)
+	pods, err := k8s.ListPods(clientset, namespace, *opts.labelSelector)
 	if err != nil {
-		log.Println(err)
-		return
+		return err
 	}
 	if len(pods.Items) == 0 {
-		log.Println("No pods found")
-		return
+		return errNoPodsFound
 	}
 
 	var tbl texttable.Table[*tableRow]
@@ -105,7 +131,7 @@ func main() {
 		readyContainers, totalContainers, status, restarts := k8s.PodDetails(&pods.Items[i])
 
 		// Build up the table contents.
-		if *allNamespaces {
+		if *opts.allNamespaces {
 			row.Namespace = pod.Namespace
 		}
 		row.Name = pod.Name
@@ -147,17 +173,22 @@ func main() {
 	tbl.Write()
 
 	// Memory profiling.
-	if *memProfile != "" {
-		f, err := os.Create(*memProfile)
+	if *opts.profileMemory != "" {
+		fp, err := os.Create(*opts.profileMemory)
 		if err != nil {
-			log.Println(err)
-			return
+			return err
 		}
-		defer f.Close()
+		defer func(fp *os.File) {
+			if err := fp.Close(); err != nil {
+				deferErrors = errors.Join(err, deferErrors)
+			}
+		}(fp)
 		// Get up-to-date statistics.
 		runtime.GC()
-		if err := pprof.WriteHeapProfile(f); err != nil {
-			log.Println(err)
+		if err := pprof.WriteHeapProfile(fp); err != nil {
+			return err
 		}
 	}
+
+	return deferErrors
 }
