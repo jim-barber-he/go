@@ -54,6 +54,7 @@ type options struct {
 	allNamespaces bool
 	kubeContext   string
 	labelSelector string
+	namespace     string
 	profileCPU    string
 	profileMemory string
 }
@@ -61,9 +62,16 @@ type options struct {
 func main() {
 	var opts options
 
-	flag.BoolVarP(&opts.allNamespaces, "all-namespaces", "A", false, "List the pods across all namespaces")
+	flag.BoolVarP(
+		&opts.allNamespaces,
+		"all-namespaces",
+		"A",
+		false,
+		"List the pods across all namespace. Overrides --namespace / -n",
+	)
 	flag.StringVar(&opts.kubeContext, "context", "", "The name of the kubeconfig context to use")
 	flag.StringVarP(&opts.labelSelector, "selector", "l", "", "Selector (label query) to filter on")
+	flag.StringVarP(&opts.namespace, "namespace", "n", "", "If present, the namespace scope for this CLI request")
 	flag.StringVar(&opts.profileCPU, "profile-cpu", "", "Produce pprof cpu profiling output in supplied file")
 	flag.StringVar(&opts.profileMemory, "profile-mem", "", "Produce pprof memory profiling output in supplied file")
 	flag.Parse()
@@ -101,8 +109,14 @@ func run(opts options) error {
 
 	clientset := k8s.Client(opts.kubeContext)
 
-	namespace := ""
-	if !opts.allNamespaces {
+	// Choose the namespace to look at based on the command line options passed.
+	var namespace string
+	switch {
+	case opts.allNamespaces:
+		namespace = ""
+	case opts.namespace != "":
+		namespace = opts.namespace
+	default:
 		namespace = k8s.Namespace(opts.kubeContext)
 	}
 
