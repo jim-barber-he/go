@@ -51,21 +51,21 @@ func (tr *tableRow) TabValues() string {
 
 // Commandline options.
 type options struct {
-	allNamespaces *bool
-	kubeContext   *string
-	labelSelector *string
-	profileCPU    *string
-	profileMemory *string
+	allNamespaces bool
+	kubeContext   string
+	labelSelector string
+	profileCPU    string
+	profileMemory string
 }
 
 func main() {
 	var opts options
 
-	opts.allNamespaces = flag.BoolP("all-namespaces", "A", false, "List the pods across all namespaces")
-	opts.kubeContext = flag.String("context", "", "The name of the kubeconfig context to use")
-	opts.labelSelector = flag.StringP("selector", "l", "", "Selector (label query) to filter on")
-	opts.profileCPU = flag.String("profile-cpu", "", "Produce pprof cpu profiling output in supplied file")
-	opts.profileMemory = flag.String("profile-mem", "", "Produce pprof memory profiling output in supplied file")
+	flag.BoolVarP(&opts.allNamespaces, "all-namespaces", "A", false, "List the pods across all namespaces")
+	flag.StringVar(&opts.kubeContext, "context", "", "The name of the kubeconfig context to use")
+	flag.StringVarP(&opts.labelSelector, "selector", "l", "", "Selector (label query) to filter on")
+	flag.StringVar(&opts.profileCPU, "profile-cpu", "", "Produce pprof cpu profiling output in supplied file")
+	flag.StringVar(&opts.profileMemory, "profile-mem", "", "Produce pprof memory profiling output in supplied file")
 	flag.Parse()
 
 	// Have run() do the main work so that it can use defer statements,
@@ -83,8 +83,8 @@ func run(opts options) error {
 	var deferErrors error
 
 	// CPU profiling.
-	if *opts.profileCPU != "" {
-		fp, err := os.Create(*opts.profileCPU)
+	if opts.profileCPU != "" {
+		fp, err := os.Create(opts.profileCPU)
 		if err != nil {
 			return err
 		}
@@ -99,11 +99,11 @@ func run(opts options) error {
 		defer pprof.StopCPUProfile()
 	}
 
-	clientset := k8s.Client(*opts.kubeContext)
+	clientset := k8s.Client(opts.kubeContext)
 
 	namespace := ""
-	if !*opts.allNamespaces {
-		namespace = k8s.Namespace(*opts.kubeContext)
+	if !opts.allNamespaces {
+		namespace = k8s.Namespace(opts.kubeContext)
 	}
 
 	nodeList, err := k8s.ListNodes(clientset)
@@ -115,7 +115,7 @@ func run(opts options) error {
 		nodes[node.Name] = &nodeList.Items[i]
 	}
 
-	pods, err := k8s.ListPods(clientset, namespace, *opts.labelSelector)
+	pods, err := k8s.ListPods(clientset, namespace, opts.labelSelector)
 	if err != nil {
 		return err
 	}
@@ -131,7 +131,7 @@ func run(opts options) error {
 		readyContainers, totalContainers, status, restarts := k8s.PodDetails(&pods.Items[i])
 
 		// Build up the table contents.
-		if *opts.allNamespaces {
+		if opts.allNamespaces {
 			row.Namespace = pod.Namespace
 		}
 		row.Name = pod.Name
@@ -173,8 +173,8 @@ func run(opts options) error {
 	tbl.Write()
 
 	// Memory profiling.
-	if *opts.profileMemory != "" {
-		fp, err := os.Create(*opts.profileMemory)
+	if opts.profileMemory != "" {
+		fp, err := os.Create(opts.profileMemory)
 		if err != nil {
 			return err
 		}
