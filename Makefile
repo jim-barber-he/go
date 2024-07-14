@@ -5,7 +5,7 @@ all: vet lint build install
 build clean install run:
 	$(MAKE) -C kubectl-plugins/kubectl-n $@
 	$(MAKE) -C kubectl-plugins/kubectl-p $@
-	$(MAKE) -C kubectl-plugins/ssm $@
+	$(MAKE) -C ssm $@
 
 lint lintall vet:
 	$(MAKE) -C aws $@
