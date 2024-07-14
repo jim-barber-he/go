@@ -14,6 +14,7 @@ import (
 	"runtime"
 	"runtime/pprof"
 	"slices"
+	"sync"
 
 	"github.com/jim-barber-he/go/k8s"
 	"github.com/jim-barber-he/go/texttable"
@@ -120,21 +121,53 @@ func run(opts options) error {
 		namespace = k8s.Namespace(opts.kubeContext)
 	}
 
-	nodeList, err := k8s.ListNodes(clientset)
-	if err != nil {
-		return err
-	}
-	nodes := make(map[string]*v1.Node)
-	for i, node := range nodeList.Items {
-		nodes[node.Name] = &nodeList.Items[i]
-	}
+	// Fetch the log of nodes and pods in parallel.
+	var wg sync.WaitGroup
+	wg.Add(2)
 
-	pods, err := k8s.ListPods(clientset, namespace, opts.labelSelector)
-	if err != nil {
+	errGetNodes := make(chan error)
+	defer close(errGetNodes)
+	nodes := make(map[string]*v1.Node)
+	go func(errChan chan<- error) {
+		defer wg.Done()
+
+		nodeList, err := k8s.ListNodes(clientset)
+		if err != nil {
+			errChan <- err
+			return
+		}
+		for i, node := range nodeList.Items {
+			nodes[node.Name] = &nodeList.Items[i]
+		}
+	}(errGetNodes)
+
+	errGetPods := make(chan error)
+	defer close(errGetPods)
+	var pods *v1.PodList = &v1.PodList{}
+	go func(pods *v1.PodList, errChan chan<- error) {
+		defer wg.Done()
+
+		listPods, err := k8s.ListPods(clientset, namespace, opts.labelSelector)
+		if err != nil {
+			errChan <- err
+			return
+		}
+		if len(listPods.Items) == 0 {
+			errChan <- errNoPodsFound
+			return
+		}
+		*pods = *listPods
+	}(pods, errGetPods)
+
+	wg.Wait()
+
+	select {
+	case err := <-errGetNodes:
 		return err
-	}
-	if len(pods.Items) == 0 {
-		return errNoPodsFound
+	case err := <-errGetPods:
+		return err
+	default:
+		// No errors.
 	}
 
 	var tbl texttable.Table[*tableRow]
