@@ -4,22 +4,25 @@ import (
 	"context"
 	"fmt"
 	"log"
-	"strings"
 
 	"github.com/jim-barber-he/go/aws"
 	"github.com/spf13/cobra"
 )
 
-var (
-	onlyValue bool
+// Commandline options.
+type getOptions struct {
+	full bool
+}
 
+var (
 	// getCmd represents the get command.
 	getCmd = &cobra.Command{
-		Use:   "get ENVIRONMENT PARAMETER",
+		Use:   "get [flags] ENVIRONMENT PARAMETER",
 		Short: "Retrieve a parameter from the AWS SSM parameter store",
 		Long: `Retrieve a parameter from the AWS SSM parameter store for a given environment.
 
-By default will retrieve a number of fields regarding the parameter, but can be configured to just return the value.`,
+By default it will retrieve just the parameter's value.
+Passing the --full flag will show all sorts of details about the parameter including its value.`,
 		Args: cobra.ExactArgs(2),
 		Run: func(cmd *cobra.Command, args []string) {
 			doGet(args)
@@ -37,55 +40,42 @@ By default will retrieve a number of fields regarding the parameter, but can be 
 			return completionHelp, cobra.ShellCompDirectiveNoFileComp
 		},
 	}
+
+	getOpts getOptions
 )
 
 func init() {
 	rootCmd.AddCommand(getCmd)
 
-	// I don't know how to refer to vars set like so...
-	// getCmd.Flags().BoolP("value", "v", false, "Only return the parameter's value")
-
-	getCmd.Flags().BoolVarP(&onlyValue, "value", "v", false, "Only return the parameter's value")
+	getCmd.Flags().BoolVarP(&getOpts.full, "full", "f", false, "Show all details for the parameter")
 }
 
+// doGet fetches a parameter from the SSM parameter store.
+// args[0] is the name of to AWS Profile to use when accessing the SSM parameter store.
+// args[1] is the path of the SSM parameter to delete.
 func doGet(args []string) {
-	environment := args[0]
-	param := args[1]
-
 	log.SetFlags(0)
 
-	// The profile handling is specific to my place of work.
-	var awsProfile string
-	switch {
-	case environment == "dev":
-		awsProfile = "hedev"
-		// dev parameters at my workplace are under the /helm/minikube/ SSM parameter store path.
-		environment = "minikube"
-	case environment == "prod":
-		awsProfile = "heaws"
-	case environment == "test":
-		awsProfile = "hetest"
+	profile, err := getAWSProfile(args[0])
+	if err != nil {
+		log.Fatalln(err)
 	}
 
 	ctx := context.Background()
-	cfg := aws.Login(ctx, awsProfile)
+	cfg := aws.Login(ctx, profile)
 
-	// Absolute SSM paths are retrieved exactly as specified.
-	// Otherwise SSM paths are assumed to be for my workplace, which need to be lowercase,
-	// and have a path prefix added based on the environment.
-	if !strings.HasPrefix(param, "/") {
-		param = fmt.Sprintf("/helm/%s/%s", environment, strings.ToLower(param))
-	}
+	ssmClient := aws.SSMClient(cfg)
 
-	p, err := aws.SSMGet(ctx, cfg, param)
+	param := getSSMPath(args[0], args[1])
+	p, err := aws.SSMGet(ctx, ssmClient, param)
 	// I don't know how to handle errors properly... i.e. I don't know how to test if it was a ParameterNotFound error.
 	if err != nil {
 		log.Fatalf("%s%s\n", err, param)
 	}
 
-	if onlyValue {
-		fmt.Println(p.Value)
-	} else {
+	if getOpts.full {
 		p.Print()
+	} else {
+		fmt.Println(p.Value)
 	}
 }

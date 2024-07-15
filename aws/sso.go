@@ -30,6 +30,8 @@ type ssoCacheData struct {
 	RefreshToken          string    `json:"refreshToken,omitempty"`
 }
 
+// Login gets a session to AWS, optionally specifying an AWS Profile to use.
+// If the session in the on-disk cache files are invalid, then perform the AWS SSO workflow to have the user login.
 func Login(ctx context.Context, awsProfile ...string) aws.Config {
 	// cfg, err := config.LoadDefaultConfig(ctx, config.WithRegion("ap-southeast-2"))
 	cfg, err := config.LoadDefaultConfig(ctx, config.WithSharedConfigProfile(awsProfile[0]))
@@ -63,6 +65,10 @@ func Login(ctx context.Context, awsProfile ...string) aws.Config {
 	return cfg
 }
 
+// ssoLogin performs the workflow required for an AWS SSO login.
+// It will open a web browser for the AWS SSO with the appropriate client code.
+// Once the user has performed the AWS SSO login, the details of the session are written to the same on-disk cache
+// that the AWS CLI would write to. The AWS SDK uses this file automatically.
 func ssoLogin(ctx context.Context, cfg aws.Config) {
 	// Recurse from assumed roles to the parent role until we find the configuration containing the SSO login details.
 	sharedConfig := checkSharedConfig(ctx, getSharedConfig(&cfg))
@@ -105,7 +111,7 @@ func ssoLogin(ctx context.Context, cfg aws.Config) {
 	}
 
 	authURL := aws.ToString(deviceAuth.VerificationUriComplete)
-	fmt.Fprintf(os.Stderr, "If your browser doesn't open, then open the following URL:\n%s\n", authURL)
+	fmt.Fprintf(os.Stderr, "If your browser doesn't open, then open the following URL:\n%s\n\n", authURL)
 	err = browser.OpenURL(authURL)
 	if err != nil {
 		log.Panic(err)
@@ -169,6 +175,10 @@ func ssoLogin(ctx context.Context, cfg aws.Config) {
 	}
 }
 
+// checkSharedConfig checks for a valid shared config from the user's AWS Profile to see if it has valid SSO session
+// details. If not, and it references a source profile, then load that and call this function again (recurse) to
+// check that, and so on. Eventually you'll hit a valid profile, or you'll get to the top-level where there is no
+// valid SSO session details at which point it has to give up.
 func checkSharedConfig(ctx context.Context, sc config.SharedConfig) config.SharedConfig {
 	sharedConfig := sc
 	if sharedConfig.SSOSession == nil {
@@ -186,6 +196,7 @@ func checkSharedConfig(ctx context.Context, sc config.SharedConfig) config.Share
 	return sharedConfig
 }
 
+// getSharedConfig extracts the shared config from the slice of interfaces contained in the aws.Config struct.
 func getSharedConfig(cfg *aws.Config) config.SharedConfig {
 	var sharedConfig config.SharedConfig
 	for _, cs := range cfg.ConfigSources {
@@ -198,6 +209,7 @@ func getSharedConfig(cfg *aws.Config) config.SharedConfig {
 	return sharedConfig
 }
 
+// getCacheFilePath returns the on-disk path of the cache file containing the AWS SSO session credentials.
 func getCacheFilePath(ssoSessionName, ssoStartURL string) (string, error) {
 	var cacheFilePath string
 	var err error
@@ -214,6 +226,8 @@ func getCacheFilePath(ssoSessionName, ssoStartURL string) (string, error) {
 	return cacheFilePath, nil
 }
 
+// writeCacheFile writes the contents of the valid credentials received after an AWS SSO login to a file.
+// It is expected that the correct cache file path is passed in as retrieved via the getCacheFilePath() function.
 func writeCacheFile(cacheFilePath string, cacheFileData *ssoCacheData) error {
 	marshaledJSON, err := json.Marshal(cacheFileData)
 	if err != nil {

@@ -6,24 +6,31 @@ import (
 	"fmt"
 	"log"
 	"slices"
-	"strings"
 
 	"github.com/jim-barber-he/go/aws"
 	"github.com/spf13/cobra"
 )
 
-var (
-	compact   bool
+// Commandline options.
+type listOptions struct {
+	full      bool
 	recursive bool
+}
 
+var (
 	// listCmd represents the list command.
 	listCmd = &cobra.Command{
-		Use:   "list ENVIRONMENT [PATH]",
+		Use:   "list [flags] ENVIRONMENT [PATH]",
 		Short: "List variables from the SSM parameter store below the supplied path",
 		Long: `List variables from the SSM parameter store below the supplied path.
 
-By default it will only list the parameters directly below the supplied path,
-but it can also show all parameters in the paths below.`,
+By default it will only list the parameters directly below the supplied path.
+If the --recursive flag is sued then it will also show all parameters in the paths below the specified path.
+If the --full flag is specified, then more details about each parameter will be shown.
+
+If no PATH is passed at all, then for the 'dev', 'test', and 'prod' environments it will look in
+'/helm/minikube/', '/helm/test/', or '/helm/prod/' respectively.`,
+		Args: cobra.RangeArgs(1, 2),
 		Run: func(cmd *cobra.Command, args []string) {
 			doList(args)
 		},
@@ -40,53 +47,43 @@ but it can also show all parameters in the paths below.`,
 			return completionHelp, cobra.ShellCompDirectiveNoFileComp
 		},
 	}
+
+	listOpts listOptions
 )
 
 func init() {
 	rootCmd.AddCommand(listCmd)
 
-	listCmd.Flags().BoolVarP(&compact, "compact", "c", false, "Only show the name, value, and type for each parameter")
+	listCmd.Flags().BoolVarP(&listOpts.full, "full", "f", false, "Show additional details for each parameter")
 	listCmd.Flags().BoolVarP(
-		&recursive, "recursive", "r", false, "Recursively list parameters below the SSM parameter store path",
+		&listOpts.recursive, "recursive", "r", false, "Recursively list parameters below the SSM parameter store path",
 	)
 }
 
+// doList will list the SSM Parameter Store parameters below the specified path.
+// args[0] is the name of to AWS Profile to use when accessing the SSM parameter store.
+// args[1] is the path of the SSM parameter to delete.
 func doList(args []string) {
-	environment := args[0]
-	var path string
-	if len(args) > 1 {
-		path = args[1]
-	} else {
-		// The default path is specific to my place of work.
-		path = fmt.Sprintf("/helm/%s", environment)
-	}
-
 	log.SetFlags(0)
 
-	// The profile handling is specific to my place of work.
-	var awsProfile string
-	switch {
-	case environment == "dev":
-		awsProfile = "hedev"
-		// dev parameters at my workplace are under the /helm/minikube/ SSM parameter store path.
-		environment = "minikube"
-	case environment == "prod":
-		awsProfile = "heaws"
-	case environment == "test":
-		awsProfile = "hetest"
+	profile, err := getAWSProfile(args[0])
+	if err != nil {
+		log.Fatalln(err)
 	}
 
 	ctx := context.Background()
-	cfg := aws.Login(ctx, awsProfile)
+	cfg := aws.Login(ctx, profile)
 
-	// Absolute SSM paths are retrieved exactly as specified.
-	// Otherwise SSM paths are assumed to be for my workplace, which need to be lowercase,
-	// and have a path prefix added based on the environment.
-	if !strings.HasPrefix(path, "/") {
-		path = fmt.Sprintf("/helm/%s/%s", environment, strings.ToLower(path))
+	ssmClient := aws.SSMClient(cfg)
+
+	var path string
+	if len(args) > 1 {
+		path = getSSMPath(args[0], args[1])
+	} else {
+		path = getSSMPath(args[0], "")
 	}
 
-	params, err := aws.SSMList(ctx, cfg, path, recursive)
+	params, err := aws.SSMList(ctx, ssmClient, path, listOpts.recursive, listOpts.full)
 	if err != nil {
 		log.Fatalln(err)
 	}
@@ -96,14 +93,17 @@ func doList(args []string) {
 		return cmp.Compare(a.Name, b.Name)
 	})
 
-	for _, param := range params {
-		if compact {
+	numParams := len(params) - 1
+	for i, param := range params {
+		if listOpts.full {
+			param.Print()
+		} else {
 			fmt.Printf("Name: %s\n", param.Name)
 			fmt.Printf("Value: %s\n", param.Value)
 			fmt.Printf("Type: %s\n", param.Type)
-		} else {
-			param.Print()
 		}
-		fmt.Println()
+		if i < numParams {
+			fmt.Println()
+		}
 	}
 }
