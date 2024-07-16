@@ -2,7 +2,6 @@ package cmd
 
 import (
 	"context"
-	"log"
 
 	"github.com/jim-barber-he/go/aws"
 	"github.com/spf13/cobra"
@@ -16,9 +15,10 @@ var deleteCmd = &cobra.Command{
 
 There is no confirmation, and once deleted you cannot recover.`,
 	Args: cobra.ExactArgs(2),
-	Run: func(cmd *cobra.Command, args []string) {
-		doDelete(args)
+	RunE: func(cmd *cobra.Command, args []string) error {
+		return doDelete(cmd.Context(), args)
 	},
+	SilenceErrors: true,
 	ValidArgsFunction: func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
 		var completionHelp []string
 		switch {
@@ -40,22 +40,14 @@ func init() {
 // doDelete deletes a parameter from the SSM parameter store.
 // args[0] is the name of to AWS Profile to use when accessing the SSM parameter store.
 // args[1] is the path of the SSM parameter to delete.
-func doDelete(args []string) {
-	log.SetFlags(0)
-
+func doDelete(ctx context.Context, args []string) error {
 	profile, err := getAWSProfile(args[0])
 	if err != nil {
-		log.Fatalln(err)
+		return err
 	}
-
-	ctx := context.Background()
 	cfg := aws.Login(ctx, profile)
-
 	ssmClient := aws.SSMClient(cfg)
 
 	param := getSSMPath(args[0], args[1])
-	err = aws.SSMDelete(ctx, ssmClient, param)
-	if err != nil {
-		log.Fatalln(err)
-	}
+	return aws.SSMDelete(ctx, ssmClient, param)
 }

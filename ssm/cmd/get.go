@@ -3,7 +3,6 @@ package cmd
 import (
 	"context"
 	"fmt"
-	"log"
 
 	"github.com/jim-barber-he/go/aws"
 	"github.com/spf13/cobra"
@@ -24,9 +23,10 @@ var (
 By default it will retrieve just the parameter's value.
 Passing the --full flag will show all sorts of details about the parameter including its value.`,
 		Args: cobra.ExactArgs(2),
-		Run: func(cmd *cobra.Command, args []string) {
-			doGet(args)
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return doGet(cmd.Context(), args)
 		},
+		SilenceErrors: true,
 		ValidArgsFunction: func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
 			var completionHelp []string
 			switch {
@@ -53,24 +53,19 @@ func init() {
 // doGet fetches a parameter from the SSM parameter store.
 // args[0] is the name of to AWS Profile to use when accessing the SSM parameter store.
 // args[1] is the path of the SSM parameter to delete.
-func doGet(args []string) {
-	log.SetFlags(0)
-
+func doGet(ctx context.Context, args []string) error {
 	profile, err := getAWSProfile(args[0])
 	if err != nil {
-		log.Fatalln(err)
+		return err
 	}
-
-	ctx := context.Background()
 	cfg := aws.Login(ctx, profile)
-
 	ssmClient := aws.SSMClient(cfg)
 
 	param := getSSMPath(args[0], args[1])
 	p, err := aws.SSMGet(ctx, ssmClient, param)
 	// I don't know how to handle errors properly... i.e. I don't know how to test if it was a ParameterNotFound error.
 	if err != nil {
-		log.Fatalf("%s%s\n", err, param)
+		return fmt.Errorf("%s%s", err, param)
 	}
 
 	if getOpts.full {
@@ -78,4 +73,6 @@ func doGet(args []string) {
 	} else {
 		fmt.Println(p.Value)
 	}
+
+	return nil
 }

@@ -1,8 +1,8 @@
 package cmd
 
 import (
+	"context"
 	"fmt"
-	"os"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -26,15 +26,15 @@ The environments also influence where the SSM parameters are looked for if not f
 Non-qualified parameters will be prefixed with '/helm/minikube/', '/helm/test/', or '/helm/prod'.
 The 'minikube' in the path is a legacy path for the development environments at my work place.
 The '/helm/' prefix for all of them is a strange naming convention where the name of a product was used for the path.`,
+	PersistentPreRun: func(cmd *cobra.Command, args []string) {
+		cmd.SilenceUsage = true
+	},
 }
 
 // Execute adds all child commands to the root command and sets flags appropriately.
 // This is called by main.main(). It only needs to happen once to the rootCmd.
-func Execute() {
-	err := rootCmd.Execute()
-	if err != nil {
-		os.Exit(1)
-	}
+func Execute(ctx context.Context) error {
+	return rootCmd.ExecuteContext(ctx)
 }
 
 func init() {

@@ -3,7 +3,6 @@ package cmd
 import (
 	"context"
 	"fmt"
-	"log"
 	"os"
 
 	"github.com/jim-barber-he/go/aws"
@@ -33,8 +32,9 @@ By default it will use the alias/parameter_store_key KMS key to encrypt the valu
 If the --verbose flag is shown, the value stored will be shown.`,
 		Args: cobra.RangeArgs(2, 3),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return doPut(args)
+			return doPut(cmd.Context(), args)
 		},
+		SilenceErrors: true,
 		ValidArgsFunction: func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
 			var completionHelp []string
 			switch {
@@ -72,8 +72,13 @@ func init() {
 // doPut stores a parameter and its value into the SSM parameter store.
 // args[0] is the name of to AWS Profile to use when accessing the SSM parameter store.
 // args[1] is the path of the SSM parameter to delete.
-func doPut(args []string) error {
-	log.SetFlags(0)
+func doPut(ctx context.Context, args []string) error {
+	profile, err := getAWSProfile(args[0])
+	if err != nil {
+		return err
+	}
+	cfg := aws.Login(ctx, profile)
+	ssmClient := aws.SSMClient(cfg)
 
 	param := getSSMPath(args[0], args[1])
 
@@ -84,7 +89,7 @@ func doPut(args []string) error {
 		}
 		bytes, err := os.ReadFile(putOpts.file)
 		if err != nil {
-			log.Fatalln(err)
+			return err
 		}
 		value = string(bytes)
 	} else {
@@ -93,16 +98,6 @@ func doPut(args []string) error {
 		}
 		value = args[2]
 	}
-
-	profile, err := getAWSProfile(args[0])
-	if err != nil {
-		log.Fatalln(err)
-	}
-
-	ctx := context.Background()
-	cfg := aws.Login(ctx, profile)
-
-	ssmClient := aws.SSMClient(cfg)
 
 	ssmParam := aws.SSMParameter{
 		Name:  param,
@@ -124,7 +119,7 @@ func doPut(args []string) error {
 
 	version, err := aws.SSMPut(ctx, ssmClient, &ssmParam)
 	if err != nil {
-		log.Fatalln(err)
+		return err
 	}
 	if putOpts.verbose {
 		fmt.Printf("Setting %s = %s\n", param, value)

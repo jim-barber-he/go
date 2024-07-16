@@ -4,7 +4,6 @@ import (
 	"cmp"
 	"context"
 	"fmt"
-	"log"
 	"slices"
 
 	"github.com/jim-barber-he/go/aws"
@@ -31,9 +30,10 @@ If the --full flag is specified, then more details about each parameter will be 
 If no PATH is passed at all, then for the 'dev', 'test', and 'prod' environments it will look in
 '/helm/minikube/', '/helm/test/', or '/helm/prod/' respectively.`,
 		Args: cobra.RangeArgs(1, 2),
-		Run: func(cmd *cobra.Command, args []string) {
-			doList(args)
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return doList(cmd.Context(), args)
 		},
+		SilenceErrors: true,
 		ValidArgsFunction: func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
 			var completionHelp []string
 			switch {
@@ -63,17 +63,12 @@ func init() {
 // doList will list the SSM Parameter Store parameters below the specified path.
 // args[0] is the name of to AWS Profile to use when accessing the SSM parameter store.
 // args[1] is the path of the SSM parameter to delete.
-func doList(args []string) {
-	log.SetFlags(0)
-
+func doList(ctx context.Context, args []string) error {
 	profile, err := getAWSProfile(args[0])
 	if err != nil {
-		log.Fatalln(err)
+		return err
 	}
-
-	ctx := context.Background()
 	cfg := aws.Login(ctx, profile)
-
 	ssmClient := aws.SSMClient(cfg)
 
 	var path string
@@ -85,7 +80,7 @@ func doList(args []string) {
 
 	params, err := aws.SSMList(ctx, ssmClient, path, listOpts.recursive, listOpts.full)
 	if err != nil {
-		log.Fatalln(err)
+		return err
 	}
 
 	// Sort function to sort the parameters by Name when iterating through them.
@@ -106,4 +101,6 @@ func doList(args []string) {
 			fmt.Println()
 		}
 	}
+
+	return nil
 }
