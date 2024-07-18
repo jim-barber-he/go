@@ -1,3 +1,6 @@
+/*
+Package cmd implements the commands for the `ssm` tool.
+*/
 package cmd
 
 import (
@@ -5,28 +8,36 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/MakeNowJust/heredoc/v2"
+	"github.com/jim-barber-he/go/util"
 	"github.com/spf13/cobra"
 )
 
 // var cfgFile string
 
+var rootLong = heredoc.Doc(`
+	A tool for manipulating parameters in the AWS SSM Parameter Store.
+
+	The tool is somewhat tailored to the environment at my workplace.
+
+	Each of the 'delete', 'get', 'list', and 'put' commands accepts an environment name as the first argument.
+	This is one of 'dev', 'test*', or 'prod*'.
+	The command maps these to the 'hedev', 'hetest', or 'heaws' AWS profile respectively.
+
+	The environments also influence where the SSM parameters are looked for if not fully qualified by starting with
+	a slash (/).
+	Non-qualified parameters will be prefixed with '/helm/minikube/', '/helm/test*/', or '/helm/prod*/'.
+	The 'minikube' in the path is a legacy path for the development environments at my work place.
+	The '/helm/' prefix for all of them is a strange naming convention where the name of the product using these
+	parameters was used for the initial path.
+`)
+
 // rootCmd represents the base command when called without any subcommands.
 var rootCmd = &cobra.Command{
 	Use:   "ssm",
 	Short: "Manipulate SSM parameter store entries",
-	Long: `A tool for manipulating parameters in the AWS SSM Parameter Store.
-
-The tool is somewhat tailored to the environment at my workplace.
-
-Each of the 'delete', 'get', 'list', and 'put' commands accepts an environment name as the first argument.
-This is one of 'dev', 'test', or 'prod'.
-The command maps these to the 'hedev', 'hetest', or 'heaws' AWS profile respectively.
-
-The environments also influence where the SSM parameters are looked for if not fully qualified by starting with a slash (/).
-Non-qualified parameters will be prefixed with '/helm/minikube/', '/helm/test/', or '/helm/prod'.
-The 'minikube' in the path is a legacy path for the development environments at my work place.
-The '/helm/' prefix for all of them is a strange naming convention where the name of a product was used for the path.`,
-	PersistentPreRun: func(cmd *cobra.Command, args []string) {
+	Long:  rootLong,
+	PersistentPreRun: func(cmd *cobra.Command, _ []string) {
 		cmd.SilenceUsage = true
 	},
 }
@@ -38,13 +49,29 @@ func Execute(ctx context.Context) error {
 }
 
 func init() {
-	// Here you will define your flags and configuration settings.
-	// Cobra supports persistent flags, which, if defined here, will be global for your application.
+	// Get the terminal width for use with my templates below.
+	cols, _, err := util.TerminalSize()
+	if err != nil {
+		cols = 80
+	}
+	// Reduce it by once since words that bump to the hard right of the terminal look uncomfortable.
+	cols--
 
-	// rootCmd.PersistentFlags().StringVar(&cfgFile, "config", "", "config file (default is $HOME/.go.yaml)")
+	// Add my own template function to Cobra to handle printing the long description in a way that it wraps with
+	// the terminal width properly.
+	cobra.AddTemplateFunc("wrapTextToWidth", util.WrapTextToWidth)
 
-	// Cobra also supports local flags, which will only run when this action is called directly.
-	// rootCmd.Flags().BoolP("toggle", "t", false, "Help message for toggle")
+	// Retrieve the help template and replace trimTrailingWhitespaces with my own wrapTextToWidth template function.
+	helpTemplate := strings.ReplaceAll(
+		rootCmd.HelpTemplate(), "trimTrailingWhitespaces", fmt.Sprintf("wrapTextToWidth %d", cols),
+	)
+	rootCmd.SetHelpTemplate(helpTemplate)
+
+	// Change the usage template to use the new wrapFlags template function.
+	usageTemplate := strings.ReplaceAll(
+		rootCmd.UsageTemplate(), "FlagUsages", fmt.Sprintf("FlagUsagesWrapped %d", cols),
+	)
+	rootCmd.SetUsageTemplate(usageTemplate)
 }
 
 // getSSMPath takes an environment name and a path to a location in the SSM parameter store
@@ -59,7 +86,7 @@ func getSSMPath(environment, path string) string {
 	// Otherwise SSM paths are formatted to suit my workplace,
 	// where they are converted to be lowercase, and have a path prefix added based on the environment.
 	if path == "" {
-		path = fmt.Sprintf("/helm/%s", environment)
+		path = "/helm/" + environment
 	} else if !strings.HasPrefix(path, "/") {
 		path = fmt.Sprintf("/helm/%s/%s", environment, strings.ToLower(path))
 	}
@@ -73,9 +100,9 @@ func getAWSProfile(environment string) (string, error) {
 	switch {
 	case environment == "dev":
 		profile = "hedev"
-	case environment == "prod":
+	case strings.HasPrefix(environment, "prod"):
 		profile = "heaws"
-	case environment == "test":
+	case strings.HasPrefix(environment, "test"):
 		profile = "hetest"
 	default:
 		return "", fmt.Errorf("Unknown environment %s", environment)

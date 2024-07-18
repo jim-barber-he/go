@@ -3,27 +3,32 @@ package cmd
 import (
 	"context"
 
+	"github.com/MakeNowJust/heredoc/v2"
 	"github.com/jim-barber-he/go/aws"
 	"github.com/spf13/cobra"
 )
+
+var deleteLong = heredoc.Doc(`
+	Delete a parameter from the SSM parameter store.
+
+	There is no confirmation, and once deleted you cannot recover.
+`)
 
 // deleteCmd represents the delete command.
 var deleteCmd = &cobra.Command{
 	Use:   "delete [flags] ENV PARAM",
 	Short: "Delete a parameter from the SSM parameter store",
-	Long: `Delete a parameter from the SSM parameter store.
-
-There is no confirmation, and once deleted you cannot recover.`,
-	Args: cobra.ExactArgs(2),
+	Long:  deleteLong,
+	Args:  cobra.ExactArgs(2),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		return doDelete(cmd.Context(), args)
 	},
 	SilenceErrors: true,
-	ValidArgsFunction: func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+	ValidArgsFunction: func(_ *cobra.Command, args []string, _ string) ([]string, cobra.ShellCompDirective) {
 		var completionHelp []string
 		switch {
 		case len(args) == 0:
-			completionHelp = cobra.AppendActiveHelp(completionHelp, "dev, test, or prod")
+			completionHelp = cobra.AppendActiveHelp(completionHelp, "dev, test*, or prod*")
 		case len(args) == 1:
 			completionHelp = cobra.AppendActiveHelp(completionHelp, "The path of the SSM parameter")
 		default:

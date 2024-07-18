@@ -1,3 +1,7 @@
+/*
+Package aws implements functions to interact with Amazon Web Services.
+This part handles AWS SSO logins.
+*/
 package aws
 
 import (

@@ -1,3 +1,6 @@
+/*
+A tool for managing parameters in the AWS SSM Parameter store.
+*/
 package main
 
 import (

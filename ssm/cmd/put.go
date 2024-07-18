@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/MakeNowJust/heredoc/v2"
 	"github.com/jim-barber-he/go/aws"
 	"github.com/spf13/cobra"
 )
@@ -17,29 +18,34 @@ type putOptions struct {
 	verbose bool
 }
 
+var putLong = heredoc.Doc(`
+	Store a parameter and its value in the AWS SSM parameter store.
+
+	The value to be stored can be passed directly on the command line or read from a file via the --file flag.
+
+	The value will be encrypted if --secure is passed.
+	By default it will use the alias/parameter_store_key KMS key to encrypt the value, but you can supply a key via
+	--key-id.
+
+	If the --verbose flag is shown, the value stored will be shown.
+`)
+
 var (
 	// putCmd represents the put command.
 	putCmd = &cobra.Command{
 		Use:   "put [flags] ENV PARAM VALUE\n  ssm put [flags] ENV PARAM --file FILE",
 		Short: "Store a parameter and its value in the AWS SSM parameter store",
-		Long: `Store a parameter and its value in the AWS SSM parameter store.
-
-The value to be stored can be passed directly on the command line or read from a file via the --file flag.
-
-The value will be encrypted if --secure is passed.
-By default it will use the alias/parameter_store_key KMS key to encrypt the value, but you can supply a key via --key-id.
-
-If the --verbose flag is shown, the value stored will be shown.`,
-		Args: cobra.RangeArgs(2, 3),
+		Long:  putLong,
+		Args:  cobra.RangeArgs(2, 3),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return doPut(cmd.Context(), args)
 		},
 		SilenceErrors: true,
-		ValidArgsFunction: func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+		ValidArgsFunction: func(_ *cobra.Command, args []string, _ string) ([]string, cobra.ShellCompDirective) {
 			var completionHelp []string
 			switch {
 			case len(args) == 0:
-				completionHelp = cobra.AppendActiveHelp(completionHelp, "dev, test, or prod")
+				completionHelp = cobra.AppendActiveHelp(completionHelp, "dev, test*, or prod*")
 			case len(args) == 1:
 				completionHelp = cobra.AppendActiveHelp(completionHelp, "The path of the SSM parameter")
 			case len(args) == 2:

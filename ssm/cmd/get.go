@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/MakeNowJust/heredoc/v2"
 	"github.com/jim-barber-he/go/aws"
 	"github.com/spf13/cobra"
 )
@@ -13,25 +14,29 @@ type getOptions struct {
 	full bool
 }
 
+var getLong = heredoc.Doc(`
+	Retrieve a parameter from the AWS SSM parameter store for a given environment.
+
+	By default it will retrieve just the parameter's value.
+	Passing the --full flag will show all sorts of details about the parameter including its value.
+`)
+
 var (
 	// getCmd represents the get command.
 	getCmd = &cobra.Command{
 		Use:   "get [flags] ENVIRONMENT PARAMETER",
 		Short: "Retrieve a parameter from the AWS SSM parameter store",
-		Long: `Retrieve a parameter from the AWS SSM parameter store for a given environment.
-
-By default it will retrieve just the parameter's value.
-Passing the --full flag will show all sorts of details about the parameter including its value.`,
-		Args: cobra.ExactArgs(2),
+		Long:  getLong,
+		Args:  cobra.ExactArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return doGet(cmd.Context(), args)
 		},
 		SilenceErrors: true,
-		ValidArgsFunction: func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+		ValidArgsFunction: func(_ *cobra.Command, args []string, _ string) ([]string, cobra.ShellCompDirective) {
 			var completionHelp []string
 			switch {
 			case len(args) == 0:
-				completionHelp = cobra.AppendActiveHelp(completionHelp, "dev, test, or prod")
+				completionHelp = cobra.AppendActiveHelp(completionHelp, "dev, test*, or prod*")
 			case len(args) == 1:
 				completionHelp = cobra.AppendActiveHelp(completionHelp, "The path of the SSM parameter")
 			default:

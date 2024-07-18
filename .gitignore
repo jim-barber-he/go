@@ -1,4 +1,4 @@
 *.swp
 kubectl-plugins/kubectl-n/kubectl-n*
-kubectl-plugins/kubectl-n/kubectl-p*
+kubectl-plugins/kubectl-p/kubectl-p*
 ssm/ssm-*

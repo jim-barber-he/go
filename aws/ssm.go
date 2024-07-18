@@ -1,3 +1,7 @@
+/*
+Package aws implements functions to interact with Amazon Web Services.
+This part handles working with the SSM Parameter Store.
+*/
 package aws
 
 import (
@@ -10,6 +14,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/ssm/types"
 )
 
+// SSMParameter represents some of the fields that makes up a parameter in the AWS SSM Parameter Store.
 type SSMParameter struct {
 	ARN              string    `json:"arn"`
 	DataType         string    `json:"dataType"`
@@ -22,6 +27,7 @@ type SSMParameter struct {
 	Version          int64     `json:"version"`
 }
 
+// Print displays the SSMParameter to the screen.
 func (p *SSMParameter) Print() {
 	fmt.Printf("ARN: %s\n", p.ARN)
 	fmt.Printf("DataType: %s\n", p.DataType)
@@ -84,7 +90,7 @@ func SSMDescribeParameter(ctx context.Context, ssmClient *ssm.Client, name strin
 			- Version
 		*/
 	} else {
-		return "", "", fmt.Errorf("%d parameters were returned instead of just 1\n", len(output.Parameters))
+		return "", "", fmt.Errorf("%d parameters were returned instead of just 1", len(output.Parameters))
 	}
 
 	return keyID, lastModifiedUser, nil
@@ -169,7 +175,6 @@ func SSMPut(ctx context.Context, ssmClient *ssm.Client, param *SSMParameter) (in
 	output, err := ssmClient.PutParameter(ctx, input)
 	if err != nil {
 		return -1, err
-	} else {
-		return output.Version, nil
 	}
+	return output.Version, nil
 }
