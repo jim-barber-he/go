@@ -104,95 +104,95 @@ func TimeTaken(start time.Time, name string) {
 	fmt.Fprintf(os.Stderr, "%s took %s\n", name, time.Since(start))
 }
 
-// WrapTextToWidth takes paragraphs in a long string and writes them to a string, wrapping before width when possible.
+// WrapTextToWidth takes paragraphs in a multi-line string and writes them into a string, wrapping before the specified
+// width when possible, without breaking up words.
 // It's not possible to wrap in time if a single word is longer than the width.
-// Each paragraph is represented by having a blank line between them.
+// Multiple lines of the paragraph are joined into the longest line that fits within the width before wrapping.
+// Each paragraph in the multi-line string is represented by a blank line between them.
 // The constructed string is then returned.
 func WrapTextToWidth(width int, str string) string {
-	var s string
-	var line string
-	var lines []string
-	var nl bool
+	var finalStr string
+	var paragraphs []string
 
-	// Get rid of an initial newline on the string if it has one.
+	// Get rid of an initial and final newlines on the string if it has them.
 	str = strings.TrimPrefix(str, string('\n'))
+	str = strings.TrimRight(str, string('\n'))
 
-	// Produce an array of lines, each representing a paragraph.
-	for _, char := range str {
-		if char != '\n' {
-			// Build up string of non-newline characters.
-			line += string(char)
-			nl = false
-		} else {
-			if nl {
-				// Second newline encountered in a row, so end of paragraph.
-				if strings.TrimSuffix(line, " ") != "" {
-					lines = append(lines, strings.TrimSuffix(line, " "))
-					line = ""
-				}
-				nl = false
-			} else {
-				// Only 1 newline was encountered, so add a space for now.
-				// If another newline is ecountered next time around the loop the space will be removed.
-				line += " "
-				nl = true
+	// Produce an array of paragraphs joining multi-line paragraphs into a single line.
+	var paragraph string
+	for _, line := range strings.Split(str, "\n") {
+		if line != "" {
+			// Add the line just read to the existing line since it is part of the same paragraph.
+			if paragraph != "" {
+				paragraph += " "
 			}
+			paragraph += line
+		} else {
+			// When we encounter a blank line, we have completed a paragraph.
+			paragraphs = append(paragraphs, paragraph)
+			paragraph = ""
 		}
 	}
-	if strings.TrimSuffix(line, " ") != "" {
-		lines = append(lines, line)
+	// Add the last paragraph.
+	if paragraph != "" {
+		paragraphs = append(paragraphs, paragraph)
 	}
 
-	// Process each line, and break it up into words by splitting on the space character.
+	// Process each paragraph, and break it up into words by splitting on the space character.
 	// Write out words on a line until they are going to exceed the width, at which point start a new line.
-	// At the end of each paragraph append a blank line (except for the last paragraph).
-	lastLine := len(lines) - 1
-	for i, l := range lines {
-		c := 0
-		for _, word := range strings.Split(l, " ") {
+	// At the end of each paragraph append a blank line (except for the final paragraph).
+	lastParagraph := len(paragraphs) - 1
+	for i, line := range paragraphs {
+		pos := 0
+		prevWord := ""
+		for _, word := range strings.Split(line, " ") {
 			wordLength := len(word)
-			// Preserve leading space.
-			if c == 0 && wordLength == 0 {
+			// Preserve leading spaces which end up as empty words when split on a space.
+			if wordLength == 0 {
 				word = " "
+				wordLength++
 			}
-			if c+1+wordLength > width {
-				// If characters written on the line + a space + the word > width,
+			if pos+1+wordLength > width {
+				// If characters written on the line + an added space + the word > width,
 				// then will need to move to a new line before writing the word.
-				if c != 0 {
-					s += fmt.Sprintln()
-					c = 0
+				if pos != 0 {
+					finalStr += fmt.Sprintln()
+					pos = 0
 				}
 			} else {
-				// The word will fit with what has already been written plus a space.
-				// Need to add the space (and update the characters written) prior to writing the word.
-				if c != 0 {
-					s += " "
-					c++
+				// The word will fit with what has already been written plus a space to separate them.
+				// Add a space, but only if we're not at the start of the line; that last thing written
+				// to the line wasn't a space; and that the current word isn't a space.
+				if pos != 0 && prevWord != " " && word != " " {
+					finalStr += " "
+					pos++
 				}
 			}
 
-			// If the word contains tabs, write it character by character incrementing c, except when we get
-			// to a tab character where we increment c by the number of characters to reach the tab-stop.
+			// If the word contains tabs, write it character by character incrementing pos as we go, except
+			// when we get to a tab character where we increment pos by the number of characters to reach
+			// the next tab-stop.
 			if strings.Contains(word, `\t`) {
 				for _, char := range word {
-					s += string(char)
+					finalStr += string(char)
 					if char == '\t' {
 						// Add how many characters to the next tab-stop.
-						c += tabWidth - (c % tabWidth)
+						pos += tabWidth - (pos % tabWidth)
 					} else {
-						c++
+						pos++
 					}
 				}
 			} else {
-				s += word
-				c += wordLength
+				finalStr += word
+				pos += wordLength
 			}
+			prevWord = word
 		}
-		s += fmt.Sprintln()
-		if i < lastLine {
-			s += fmt.Sprintln()
+		finalStr += fmt.Sprintln()
+		if i < lastParagraph {
+			finalStr += fmt.Sprintln()
 		}
 	}
 
-	return s
+	return finalStr
 }
