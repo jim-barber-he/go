@@ -14,12 +14,12 @@ import (
 	"runtime"
 	"runtime/pprof"
 	"slices"
-	"sync"
 
 	"github.com/jim-barber-he/go/k8s"
 	"github.com/jim-barber-he/go/texttable"
 	"github.com/jim-barber-he/go/util"
 	flag "github.com/spf13/pflag"
+	"golang.org/x/sync/errgroup"
 	v1 "k8s.io/api/core/v1"
 )
 
@@ -88,9 +88,6 @@ func main() {
 // Error handling isn't perfect here, and not sure how to do it better.
 // If an error is returned early, then I guess any errors from the defer functions will be lost.
 func run(opts options) error {
-	// If the defer anonymous functions encounter an error, they can set this var to be returned to the calling function.
-	var deferErrors error
-
 	// CPU profiling.
 	if opts.profileCPU != "" {
 		fp, err := os.Create(opts.profileCPU)
@@ -99,7 +96,7 @@ func run(opts options) error {
 		}
 		defer func(fp *os.File) {
 			if err := fp.Close(); err != nil {
-				deferErrors = errors.Join(err, deferErrors)
+				log.Println(err)
 			}
 		}(fp)
 		if err := pprof.StartCPUProfile(fp); err != nil {
@@ -122,52 +119,35 @@ func run(opts options) error {
 	}
 
 	// Fetch the log of nodes and pods in parallel.
-	var wg sync.WaitGroup
-	wg.Add(2)
+	g := new(errgroup.Group)
 
-	errGetNodes := make(chan error)
-	defer close(errGetNodes)
 	nodes := make(map[string]*v1.Node)
-	go func(errChan chan<- error) {
-		defer wg.Done()
-
+	g.Go(func() error {
 		nodeList, err := k8s.ListNodes(clientset)
 		if err != nil {
-			errChan <- err
-			return
+			return err
 		}
 		for i, node := range nodeList.Items {
 			nodes[node.Name] = &nodeList.Items[i]
 		}
-	}(errGetNodes)
+		return nil
+	})
 
-	errGetPods := make(chan error)
-	defer close(errGetPods)
 	var pods *v1.PodList = &v1.PodList{}
-	go func(pods *v1.PodList, errChan chan<- error) {
-		defer wg.Done()
-
+	g.Go(func() error {
 		listPods, err := k8s.ListPods(clientset, namespace, opts.labelSelector)
 		if err != nil {
-			errChan <- err
-			return
+			return err
 		}
 		if len(listPods.Items) == 0 {
-			errChan <- errNoPodsFound
-			return
+			return errNoPodsFound
 		}
 		*pods = *listPods
-	}(pods, errGetPods)
+		return nil
+	})
 
-	wg.Wait()
-
-	select {
-	case err := <-errGetNodes:
+	if err := g.Wait(); err != nil {
 		return err
-	case err := <-errGetPods:
-		return err
-	default:
-		// No errors.
 	}
 
 	var tbl texttable.Table[*tableRow]
@@ -227,7 +207,7 @@ func run(opts options) error {
 		}
 		defer func(fp *os.File) {
 			if err := fp.Close(); err != nil {
-				deferErrors = errors.Join(err, deferErrors)
+				log.Println(err)
 			}
 		}(fp)
 		// Get up-to-date statistics.
@@ -237,5 +217,5 @@ func run(opts options) error {
 		}
 	}
 
-	return deferErrors
+	return nil
 }
