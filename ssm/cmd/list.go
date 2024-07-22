@@ -75,7 +75,7 @@ func doList(ctx context.Context, args []string) error {
 	if err != nil {
 		return err
 	}
-	cfg := aws.Login(ctx, profile)
+	cfg := aws.Login(ctx, &aws.LoginSessionDetails{Profile: profile, Region: rootOpts.region})
 	ssmClient := aws.SSMClient(cfg)
 
 	var path string

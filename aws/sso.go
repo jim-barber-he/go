@@ -23,6 +23,12 @@ import (
 	"github.com/pkg/browser"
 )
 
+// LoginSessionDetails is for passing AWS Profile and Region options to the Login function.
+type LoginSessionDetails struct {
+	Profile string
+	Region  string
+}
+
 type ssoCacheData struct {
 	StartURL              string    `json:"startUrl"`
 	Region                string    `json:"region"`
@@ -34,11 +40,34 @@ type ssoCacheData struct {
 	RefreshToken          string    `json:"refreshToken,omitempty"`
 }
 
-// Login gets a session to AWS, optionally specifying an AWS Profile to use.
+// withSharedConfigProfileAndRegion is a helper function to construct functional options that sets Profile and Region
+// on config.LoadOptions.
+func withSharedConfigProfileAndRegion(profile, region string) config.LoadOptionsFunc {
+	return func(o *config.LoadOptions) error {
+		o.Region = region
+		o.SharedConfigProfile = profile
+		return nil
+	}
+}
+
+// Login gets a session to AWS, optionally specifying an AWS Profile & Region to use via the LoginSessionDetails option.
 // If the session in the on-disk cache files are invalid, then perform the AWS SSO workflow to have the user login.
-func Login(ctx context.Context, awsProfile ...string) aws.Config {
-	// cfg, err := config.LoadDefaultConfig(ctx, config.WithRegion("ap-southeast-2"))
-	cfg, err := config.LoadDefaultConfig(ctx, config.WithSharedConfigProfile(awsProfile[0]))
+func Login(ctx context.Context, details *LoginSessionDetails) aws.Config {
+	var cfg aws.Config
+	var err error
+
+	switch {
+	case details.Profile != "" && details.Region != "":
+		cfg, err = config.LoadDefaultConfig(
+			ctx, withSharedConfigProfileAndRegion(details.Profile, details.Region),
+		)
+	case details.Profile != "":
+		cfg, err = config.LoadDefaultConfig(ctx, config.WithSharedConfigProfile(details.Profile))
+	case details.Region != "":
+		cfg, err = config.LoadDefaultConfig(ctx, config.WithRegion(details.Region))
+	default:
+		cfg, err = config.LoadDefaultConfig(ctx)
+	}
 	if err != nil {
 		log.Panic(err)
 	}

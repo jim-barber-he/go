@@ -6,6 +6,7 @@ package cmd
 import (
 	"context"
 	"fmt"
+	"os"
 	"strings"
 
 	"github.com/MakeNowJust/heredoc/v2"
@@ -13,7 +14,11 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// var cfgFile string
+// Commandline options.
+type rootOptions struct {
+	profile string
+	region  string
+}
 
 var rootLong = heredoc.Doc(`
 	A tool for manipulating parameters in the AWS SSM Parameter Store.
@@ -33,14 +38,18 @@ var rootLong = heredoc.Doc(`
 `)
 
 // rootCmd represents the base command when called without any subcommands.
-var rootCmd = &cobra.Command{
-	Use:   "ssm",
-	Short: "Manipulate SSM parameter store entries",
-	Long:  rootLong,
-	PersistentPreRun: func(cmd *cobra.Command, _ []string) {
-		cmd.SilenceUsage = true
-	},
-}
+var (
+	rootCmd = &cobra.Command{
+		Use:   "ssm",
+		Short: "Manipulate SSM parameter store entries",
+		Long:  rootLong,
+		PersistentPreRun: func(cmd *cobra.Command, _ []string) {
+			cmd.SilenceUsage = true
+		},
+	}
+
+	rootOpts rootOptions
+)
 
 // Execute adds all child commands to the root command and sets flags appropriately.
 // This is called by main.main(). It only needs to happen once to the rootCmd.
@@ -57,6 +66,17 @@ func init() {
 	// Reduce it by once since words that bump to the hard right of the terminal look uncomfortable.
 	cols--
 
+	// Determine the default region for when one isn't passed in.
+	var defaultRegion string
+	switch {
+	case os.Getenv("AWS_REGION") != "":
+		defaultRegion = os.Getenv("AWS_REGION")
+	case os.Getenv("AWS_DEFAULT_REGION") != "":
+		defaultRegion = os.Getenv("AWS_DEFAULT_REGION")
+	default:
+		defaultRegion = "ap-southeast-2"
+	}
+
 	// Add my own template function to Cobra to handle printing the long description in a way that it wraps with
 	// the terminal width properly.
 	cobra.AddTemplateFunc("wrapTextToWidth", util.WrapTextToWidth)
@@ -72,6 +92,9 @@ func init() {
 		rootCmd.UsageTemplate(), "FlagUsages", fmt.Sprintf("FlagUsagesWrapped %d", cols),
 	)
 	rootCmd.SetUsageTemplate(usageTemplate)
+
+	rootCmd.PersistentFlags().StringVar(&rootOpts.profile, "profile", "", "AWS profile to use")
+	rootCmd.PersistentFlags().StringVar(&rootOpts.region, "region", defaultRegion, "AWS region to use")
 }
 
 // getSSMPath takes an environment name and a path to a location in the SSM parameter store
@@ -95,7 +118,13 @@ func getSSMPath(environment, path string) string {
 }
 
 // getAWSProfile takes an environment name and returns an AWS Profile based on what is used at my workplace.
+// Note that if --profile was passed, then that will take precedence.
 func getAWSProfile(environment string) (string, error) {
+	// The --profile command line option wins.
+	if rootOpts.profile != "" {
+		return rootOpts.profile, nil
+	}
+
 	var profile string
 	switch {
 	case environment == "dev":
@@ -105,7 +134,8 @@ func getAWSProfile(environment string) (string, error) {
 	case strings.HasPrefix(environment, "test"):
 		profile = "hetest"
 	default:
-		return "", fmt.Errorf("Unknown environment %s", environment)
+		// For anything else set the AWS profile to the name of the environment.
+		profile = environment
 	}
 
 	return profile, nil
