@@ -27,7 +27,7 @@ var rootLong = heredoc.Doc(`
 
 	Each of the 'delete', 'get', 'list', and 'put' commands accepts an environment name as the first argument.
 	This is one of 'dev', 'test*', or 'prod*'.
-	The command maps these to the 'hedev', 'hetest', or 'heaws' AWS profile respectively.
+	The command maps these to the 'hetest', 'hetest', or 'heaws' AWS profile respectively.
 
 	The environments also influence where the SSM parameters are looked for if not fully qualified by starting with
 	a slash (/).
@@ -128,7 +128,7 @@ func getAWSProfile(environment string) (string, error) {
 	var profile string
 	switch {
 	case environment == "dev":
-		profile = "hedev"
+		profile = "hetest"
 	case strings.HasPrefix(environment, "prod"):
 		profile = "heaws"
 	case strings.HasPrefix(environment, "test"):

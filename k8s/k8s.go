@@ -19,9 +19,10 @@ import (
 )
 
 var (
-	errGettingNode  = errors.New("error getting node")
-	errGettingNodes = errors.New("error getting nodes")
-	errGettingPods  = errors.New("error getting pods")
+	errGettingNamespace = errors.New("error getting namespace")
+	errGettingNode      = errors.New("error getting node")
+	errGettingNodes     = errors.New("error getting nodes")
+	errGettingPods      = errors.New("error getting pods")
 )
 
 // Based on clientcmd.BuildConfigFromFlags from the kubernetes go-client but with the added `context` parameter to set
@@ -50,14 +51,24 @@ func Client(kubeContext string) *kubernetes.Clientset {
 	return clientset
 }
 
+// GetNamespace returns a namespace.
+func GetNamespace(client kubernetes.Interface, name string) (*v1.Namespace, error) {
+	ptr, err := client.CoreV1().Namespaces().Get(context.Background(), name, metav1.GetOptions{})
+	if err != nil {
+		err = fmt.Errorf("%w: %w", errGettingNamespace, err)
+		return nil, err
+	}
+	return ptr, nil
+}
+
 // GetNode returns a node.
-func GetNode(client kubernetes.Interface, node string) (*v1.Node, error) {
-	nodePtr, err := client.CoreV1().Nodes().Get(context.Background(), node, metav1.GetOptions{})
+func GetNode(client kubernetes.Interface, name string) (*v1.Node, error) {
+	ptr, err := client.CoreV1().Nodes().Get(context.Background(), name, metav1.GetOptions{})
 	if err != nil {
 		err = fmt.Errorf("%w: %w", errGettingNode, err)
 		return nil, err
 	}
-	return nodePtr, nil
+	return ptr, nil
 }
 
 // hasPodReadyCondition returns true if the pod has a condition type of "Ready" with a status of "True".
@@ -124,7 +135,7 @@ func ListPods(client kubernetes.Interface, namespace, labelSelector string) (*v1
 	return pods, nil
 }
 
-// Namespace returns the namespace that is selected (or "default" if it is not set) for a context in kubeconfig.
+// Namespace returns the namespace name that is selected (or "default" if it is not set) for a context in kubeconfig.
 // If the context that is passed in is an empty string, fall back to the selected context in kubeconfig.
 // If that's not set either, then just return the "default" namespace.
 func Namespace(kubeContext string) string {

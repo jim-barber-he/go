@@ -13,6 +13,7 @@ import (
 
 // Commandline options.
 type listOptions struct {
+	brief     bool
 	full      bool
 	recursive bool
 }
@@ -37,6 +38,15 @@ var (
 		Short: "List parameters from the SSM parameter store below a supplied path",
 		Long:  listLong,
 		Args:  cobra.RangeArgs(1, 2),
+		PreRunE: func(cmd *cobra.Command, args []string) error {
+			if listOpts.brief && listOpts.full {
+				return fmt.Errorf(
+					"It does not make sense to specify both --brief and --full\n%s",
+					cmd.UsageString(),
+				)
+			}
+			return nil
+		},
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return doList(cmd.Context(), args)
 		},
@@ -61,6 +71,7 @@ var (
 func init() {
 	rootCmd.AddCommand(listCmd)
 
+	listCmd.Flags().BoolVarP(&listOpts.brief, "brief", "b", false, "Show parameter = value output")
 	listCmd.Flags().BoolVarP(&listOpts.full, "full", "f", false, "Show additional details for each parameter")
 	listCmd.Flags().BoolVarP(
 		&listOpts.recursive, "recursive", "r", false, "Recursively list parameters below the parameter store path",
@@ -97,9 +108,12 @@ func doList(ctx context.Context, args []string) error {
 
 	numParams := len(params) - 1
 	for i, param := range params {
-		if listOpts.full {
+		switch {
+		case listOpts.brief:
+			fmt.Printf("%s = %s\n", param.Name, param.Value)
+		case listOpts.full:
 			param.Print()
-		} else {
+		default:
 			fmt.Printf("Name: %s\n", param.Name)
 			fmt.Printf("Value: %s\n", param.Value)
 			fmt.Printf("Type: %s\n", param.Type)

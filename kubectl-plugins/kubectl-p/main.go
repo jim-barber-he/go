@@ -85,8 +85,6 @@ func main() {
 }
 
 // run is the main part of the program.
-// Error handling isn't perfect here, and not sure how to do it better.
-// If an error is returned early, then I guess any errors from the defer functions will be lost.
 func run(opts options) error {
 	// CPU profiling.
 	if opts.profileCPU != "" {
@@ -114,6 +112,11 @@ func run(opts options) error {
 		namespace = ""
 	case opts.namespace != "":
 		namespace = opts.namespace
+
+		// Verify that the supplied namespace is valid.
+		if _, err := k8s.GetNamespace(clientset, namespace); err != nil {
+			return err
+		}
 	default:
 		namespace = k8s.Namespace(opts.kubeContext)
 	}
