@@ -119,10 +119,10 @@ func getSSMPath(environment, path string) string {
 
 // getAWSProfile takes an environment name and returns an AWS Profile based on what is used at my workplace.
 // Note that if --profile was passed, then that will take precedence.
-func getAWSProfile(environment string) (string, error) {
+func getAWSProfile(environment string) string {
 	// The --profile command line option wins.
 	if rootOpts.profile != "" {
-		return rootOpts.profile, nil
+		return rootOpts.profile
 	}
 
 	var profile string
@@ -138,5 +138,5 @@ func getAWSProfile(environment string) (string, error) {
 		profile = environment
 	}
 
-	return profile, nil
+	return profile
 }

@@ -13,9 +13,10 @@ import (
 
 // Commandline options.
 type listOptions struct {
-	brief     bool
-	full      bool
-	recursive bool
+	brief       bool
+	full        bool
+	recursive   bool
+	safeDecrypt bool
 }
 
 var listLong = heredoc.Doc(`
@@ -29,6 +30,9 @@ var listLong = heredoc.Doc(`
 
 	If no PATH is passed at all, then for the 'dev', 'test*', and 'prod*' environments it will look in
 	'/helm/minikube/', '/helm/test*/', or '/helm/prod*/' respectively.
+
+	The --safe-decrypt flag is slower, but can handle if you have SecureStrings in your SSM parameter store that
+	can't be decrypted due to their KMS key being inaccessible or deleted.
 `)
 
 var (
@@ -38,7 +42,7 @@ var (
 		Short: "List parameters from the SSM parameter store below a supplied path",
 		Long:  listLong,
 		Args:  cobra.RangeArgs(1, 2),
-		PreRunE: func(cmd *cobra.Command, args []string) error {
+		PreRunE: func(cmd *cobra.Command, _ []string) error {
 			if listOpts.brief && listOpts.full {
 				return fmt.Errorf(
 					"It does not make sense to specify both --brief and --full\n%s",
@@ -76,16 +80,14 @@ func init() {
 	listCmd.Flags().BoolVarP(
 		&listOpts.recursive, "recursive", "r", false, "Recursively list parameters below the parameter store path",
 	)
+	listCmd.Flags().BoolVarP(&listOpts.safeDecrypt, "safe-decrypt", "s", false, "Slower decrypt that can handle errors")
 }
 
 // doList will list the SSM Parameter Store parameters below the specified path.
 // args[0] is the name of to AWS Profile to use when accessing the SSM parameter store.
-// args[1] is the path of the SSM parameter to delete.
+// args[1] is the path of the SSM parameter to list.
 func doList(ctx context.Context, args []string) error {
-	profile, err := getAWSProfile(args[0])
-	if err != nil {
-		return err
-	}
+	profile := getAWSProfile(args[0])
 	cfg := aws.Login(ctx, &aws.LoginSessionDetails{Profile: profile, Region: rootOpts.region})
 	ssmClient := aws.SSMClient(cfg)
 
@@ -96,7 +98,13 @@ func doList(ctx context.Context, args []string) error {
 		path = getSSMPath(args[0], "")
 	}
 
-	params, err := aws.SSMList(ctx, ssmClient, path, listOpts.recursive, listOpts.full)
+	var err error
+	var params []aws.SSMParameter
+	if listOpts.safeDecrypt {
+		params, err = aws.SSMListSafeDecrypt(ctx, ssmClient, path, listOpts.recursive, listOpts.full)
+	} else {
+		params, err = aws.SSMList(ctx, ssmClient, path, listOpts.recursive, listOpts.full)
+	}
 	if err != nil {
 		return err
 	}
@@ -117,6 +125,9 @@ func doList(ctx context.Context, args []string) error {
 			fmt.Printf("Name: %s\n", param.Name)
 			fmt.Printf("Value: %s\n", param.Value)
 			fmt.Printf("Type: %s\n", param.Type)
+			if param.Error != "" {
+				fmt.Printf("Error: %s\n", param.Error)
+			}
 		}
 		if i < numParams {
 			fmt.Println()

@@ -46,10 +46,7 @@ func init() {
 // args[0] is the name of to AWS Profile to use when accessing the SSM parameter store.
 // args[1] is the path of the SSM parameter to delete.
 func doDelete(ctx context.Context, args []string) error {
-	profile, err := getAWSProfile(args[0])
-	if err != nil {
-		return err
-	}
+	profile := getAWSProfile(args[0])
 	cfg := aws.Login(ctx, &aws.LoginSessionDetails{Profile: profile, Region: rootOpts.region})
 	ssmClient := aws.SSMClient(cfg)
 
