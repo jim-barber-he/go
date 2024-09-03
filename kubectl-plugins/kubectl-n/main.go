@@ -23,15 +23,22 @@ import (
 const tick = "\u2713"
 
 var goodStatuses = map[v1.NodeConditionType]v1.ConditionStatus{
-	"CorruptDockerOverlay2": "False",
-	"DiskPressure":          "False",
-	"KernelDeadlock":        "False",
-	"MemoryPressure":        "False",
-	"NetworkUnavailable":    "False",
-	"OutOfDisk":             "False",
-	"PIDPressure":           "False",
-	"ReadonlyFilesystem":    "False",
-	"Ready":                 "True",
+	"ContainerRuntimeUnhealthy":   "False",
+	"CorruptDockerOverlay2":       "False",
+	"CPUPressure":                 "False",
+	"DiskPressure":                "False",
+	"FrequentContainerdRestart":   "False",
+	"FrequentDockerRestart":       "False",
+	"FrequentKubeletRestart":      "False",
+	"FrequentUnregisterNetDevice": "False",
+	"KernelDeadlock":              "False",
+	"KubeletUnhealthy":            "False",
+	"MemoryPressure":              "False",
+	"NetworkUnavailable":          "False",
+	"OutOfDisk":                   "False",
+	"PIDPressure":                 "False",
+	"ReadonlyFilesystem":          "False",
+	"Ready":                       "True",
 }
 
 type tableRow struct {
@@ -156,7 +163,15 @@ func getNodeStatus(conditions []v1.NodeCondition) (string, []string) {
 			continue
 		}
 		if condition.Status != goodStatuses[condition.Type] {
-			messages = append(messages, fmt.Sprintf("%s=%s", condition.Type, condition.Message))
+			messages = append(
+				messages,
+				fmt.Sprintf(
+					"Node condition %s is now: %s, message: \"%s\"",
+					condition.Type,
+					condition.Status,
+					condition.Message,
+				),
+			)
 		}
 	}
 	if len(messages) > 0 {

@@ -71,6 +71,9 @@ func FormatAge(timestamp time.Time) string {
 			return dateStr
 		}
 	}
+	if retNext && seconds == 0 {
+		return dateStr
+	}
 	return fmt.Sprintf("%s%ds", dateStr, seconds)
 }
 
