@@ -68,7 +68,7 @@ func main() {
 		"all-namespaces",
 		"A",
 		false,
-		"List the pods across all namespace. Overrides --namespace / -n",
+		"List the pods across all namespaces. Overrides --namespace / -n",
 	)
 	flag.StringVar(&opts.kubeContext, "context", "", "The name of the kubeconfig context to use")
 	flag.StringVarP(&opts.labelSelector, "selector", "l", "", "Selector (label query) to filter on")

@@ -4,15 +4,24 @@ Package util provides various utility functions.
 package util
 
 import (
+	"context"
+	"errors"
 	"fmt"
+	"log"
 	"os"
+	"os/exec"
+	"strconv"
 	"strings"
+	"syscall"
 	"time"
 
 	"golang.org/x/term"
 )
 
 const (
+	// ExitCodeProcessKilled is the exit code used if Run() killed the process for exceeding its timeout.
+	ExitCodeProcessKilled = 137
+
 	numSecondsPerMinute = 60
 	numSecondsPerHour   = 60 * numSecondsPerMinute
 	numSecondsPerDay    = 24 * numSecondsPerHour
@@ -20,6 +29,8 @@ const (
 
 	tabStopWidth = 8
 )
+
+var errCommandTimedOut = errors.New("command timed out")
 
 // FormatAge returns the age in a human readable format of the first 2 non-zero time units from weeks to seconds,
 // or just the seconds if no higher time unit was above 0.
@@ -77,6 +88,37 @@ func FormatAge(timestamp time.Time) string {
 	return fmt.Sprintf("%s%ds", dateStr, seconds)
 }
 
+// GetEnv returns the value of an environment variable as a string.
+// If the value is not set, then the supplied default value will be returned instead.
+func GetEnv(envVar, defaultValue string) string {
+	if val, exists := os.LookupEnv(envVar); exists {
+		return val
+	}
+	return defaultValue
+}
+
+// GetEnvBool returns the value of an environment variable as a boolean.
+// If the value is not set, then the supplied default value will be returned instead.
+func GetEnvBool(envVar string, defaultValue bool) bool {
+	if val, exists := os.LookupEnv(envVar); exists {
+		if ret, err := strconv.ParseBool(val); err == nil {
+			return ret
+		}
+	}
+	return defaultValue
+}
+
+// GetEnvInt returns the value of an environment variable as an integer.
+// If the value is not set, then the supplied default value will be returned instead.
+func GetEnvInt(envVar string, defaultValue int) int {
+	if val, exists := os.LookupEnv(envVar); exists {
+		if ret, err := strconv.Atoi(val); err == nil {
+			return ret
+		}
+	}
+	return defaultValue
+}
+
 // LastSplitItem splits a string into a slice based on a split character and returns the last item.
 func LastSplitItem(str, splitChar string) string {
 	result := strings.Split(str, splitChar)
@@ -84,6 +126,40 @@ func LastSplitItem(str, splitChar string) string {
 		return result[len(result)-1]
 	}
 	return ""
+}
+
+// Run executes a command with a timeout.
+// If the timeout is set to 0 then there is no timeout.
+// Returns an integer suitable for use as an exit code, and an error.
+func Run(timeout int, command string, args ...string) (int, error) {
+	ctx := context.Background()
+	if timeout > 0 {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, time.Duration(timeout)*time.Second)
+		defer cancel()
+	}
+
+	process := exec.CommandContext(ctx, command, args...)
+	process.Stdout = os.Stdout
+	process.Stderr = os.Stderr
+	process.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+
+	err := process.Run()
+	switch {
+	case errors.Is(ctx.Err(), context.DeadlineExceeded):
+		if err := syscall.Kill(-process.Process.Pid, syscall.SIGKILL); err != nil {
+			log.Println("Failed to kill process:", err)
+		}
+		return ExitCodeProcessKilled, errCommandTimedOut
+	case err != nil:
+		var exitError *exec.ExitError
+		if errors.As(err, &exitError) {
+			return exitError.ExitCode(), fmt.Errorf("%s", exitError)
+		}
+		return 1, err
+	}
+
+	return 0, nil
 }
 
 // TerminalSize tries to return the character dimensions of the terminal.
