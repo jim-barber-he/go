@@ -59,23 +59,10 @@ func Execute(ctx context.Context) error {
 
 func init() {
 	// Get the terminal width for use with my templates below.
-	cols, _, err := util.TerminalSize()
-	if err != nil {
-		cols = 80
-	}
-	// Reduce it by once since words that bump to the hard right of the terminal look uncomfortable.
-	cols--
+	cols := getTerminalWidth()
 
 	// Determine the default region for when one isn't passed in.
-	var defaultRegion string
-	switch {
-	case os.Getenv("AWS_REGION") != "":
-		defaultRegion = os.Getenv("AWS_REGION")
-	case os.Getenv("AWS_DEFAULT_REGION") != "":
-		defaultRegion = os.Getenv("AWS_DEFAULT_REGION")
-	default:
-		defaultRegion = "ap-southeast-2"
-	}
+	defaultRegion := getDefaultRegion()
 
 	// Add my own template function to Cobra to handle printing the long description in a way that it wraps with
 	// the terminal width properly.
@@ -95,6 +82,40 @@ func init() {
 
 	rootCmd.PersistentFlags().StringVar(&rootOpts.profile, "profile", "", "AWS profile to use")
 	rootCmd.PersistentFlags().StringVar(&rootOpts.region, "region", defaultRegion, "AWS region to use")
+}
+
+// getAWSProfile takes an environment name and returns an AWS Profile based on what is used at my workplace.
+// Note that if --profile was passed, then that will take precedence.
+func getAWSProfile(environment string) string {
+	// The --profile command line option takes precedence.
+	if rootOpts.profile != "" {
+		return rootOpts.profile
+	}
+
+	// Determine the AWS profile based on the environment.
+	switch {
+	case environment == "dev":
+		return "hetest"
+	case strings.HasPrefix(environment, "prod"):
+		return "heaws"
+	case strings.HasPrefix(environment, "test"):
+		return "hetest"
+	default:
+		// For anything else set the AWS profile to the name of the environment.
+		return environment
+	}
+}
+
+// getDefaultRegion determines the default AWS region based on environment variables.
+func getDefaultRegion() string {
+	switch {
+	case os.Getenv("AWS_REGION") != "":
+		return os.Getenv("AWS_REGION")
+	case os.Getenv("AWS_DEFAULT_REGION") != "":
+		return os.Getenv("AWS_DEFAULT_REGION")
+	default:
+		return "ap-southeast-2"
+	}
 }
 
 // getSSMPath takes an environment name and a path to a location in the SSM parameter store
@@ -117,26 +138,13 @@ func getSSMPath(environment, path string) string {
 	return path
 }
 
-// getAWSProfile takes an environment name and returns an AWS Profile based on what is used at my workplace.
-// Note that if --profile was passed, then that will take precedence.
-func getAWSProfile(environment string) string {
-	// The --profile command line option wins.
-	if rootOpts.profile != "" {
-		return rootOpts.profile
+// getTerminalWidth retrieves the terminal width, defaulting to 80 if an error occurs.
+// The width is reduced by one since words that bump to the hard right of the terminal look uncomfortable.
+func getTerminalWidth() int {
+	cols, _, err := util.TerminalSize()
+	if err != nil {
+		cols = 80
 	}
-
-	var profile string
-	switch {
-	case environment == "dev":
-		profile = "hetest"
-	case strings.HasPrefix(environment, "prod"):
-		profile = "heaws"
-	case strings.HasPrefix(environment, "test"):
-		profile = "hetest"
-	default:
-		// For anything else set the AWS profile to the name of the environment.
-		profile = environment
-	}
-
-	return profile
+	// Reduce it by one since words that bump to the hard right of the terminal look uncomfortable.
+	return cols - 1
 }

@@ -41,6 +41,7 @@ var goodStatuses = map[v1.NodeConditionType]v1.ConditionStatus{
 	"Ready":                       "True",
 }
 
+// tableRow represents a row in the output table.
 type tableRow struct {
 	Name          string `title:"NAME"`
 	Ok            string `title:"OK"`
@@ -55,12 +56,12 @@ type tableRow struct {
 	InstanceGroup string `title:"INSTANCE-GROUP,omitempty"`
 }
 
-// Implement the texttab.TableFormatter interface.
+// TabTitleRow implements the texttab.TableFormatter interface.
 func (tr *tableRow) TabTitleRow() string {
 	return texttable.ReflectedTitleRow(tr)
 }
 
-// Implement the texttab.TableFormatter interface.
+// TabValues implements the texttab.TableFormatter interface.
 func (tr *tableRow) TabValues() string {
 	return texttable.ReflectedTabValues(tr)
 }
@@ -73,7 +74,7 @@ func main() {
 
 	nodes, err := k8s.ListNodes(clientset)
 	if err != nil {
-		log.Fatal(err)
+		log.Fatalf("Error listing nodes: %v", err)
 	}
 	if len(nodes.Items) == 0 {
 		log.Fatal("No nodes found")
@@ -81,10 +82,9 @@ func main() {
 
 	var tbl texttable.Table[*tableRow]
 	warnings := make(map[string][]string)
+
 	for _, node := range nodes.Items {
-		var row tableRow
-		// Just keep the hostname and strip off any domain name.
-		row.Name = strings.Split(node.Name, ".")[0]
+		row := createTableRow(&node)
 
 		// Keep track of any warning messages for the node and a status to reflect if there are problems.
 		status, messages := getNodeStatus(node.Status.Conditions)
@@ -94,37 +94,6 @@ func main() {
 			warnings[node.Name] = append(warnings[node.Name], "Scheduling Disabled")
 		}
 		row.Ok = status
-
-		row.Age = util.FormatAge(node.CreationTimestamp.Time)
-		row.Version = node.Status.NodeInfo.KubeletVersion
-		row.Runtime = util.LastSplitItem(node.Status.NodeInfo.ContainerRuntimeVersion, "/")
-
-		// Additional columns for AWS EC2 instances are from this point on.
-
-		row.Type = node.Labels["node.kubernetes.io/instance-type"]
-
-		if node.Labels["node-role.kubernetes.io/spot-worker"] != "" {
-			row.Spot = tick
-		} else {
-			row.Spot = "x"
-		}
-
-		row.AZ = util.LastSplitItem(node.Labels["topology.kubernetes.io/zone"], "")
-
-		// The external AWS controller manager sets the node names to the Instance ID,
-		// while the old AWS code in k8s sets it to the DNS name that contains the IP address.
-		// Depending on which one is used will determine if the InstanceID or IP value is set.
-		if strings.HasPrefix(node.Name, "ip-") {
-			row.InstanceID = util.LastSplitItem(node.Spec.ProviderID, "/")
-		} else {
-			row.IP = node.Annotations["alpha.kubernetes.io/provided-node-ip"]
-		}
-
-		// Handle getting a node group for both EKS and kOps.
-		row.InstanceGroup = cmp.Or(
-			node.Labels["kops.k8s.io/instancegroup"],
-			node.Labels["eks.amazonaws.com/nodegroup"],
-		)
 
 		tbl.Append(&row)
 	}
@@ -142,40 +111,88 @@ func main() {
 	tbl.Write()
 
 	// Display any warning messages for the nodes.
-	for nodeName, warnArray := range warnings {
-		if len(warnArray) > 0 {
-			fmt.Println()
-			for _, message := range warnArray {
-				fmt.Printf("%s: %s\n", nodeName, message)
-			}
-		}
-	}
+	printWarnings(warnings)
 }
 
-// Looks at the conditions of a node and returns the node's status and any warning messages associated with it.
+// createTableRow creates a tableRow struct from a v1.Node struct.
+func createTableRow(node *v1.Node) tableRow {
+	var row tableRow
+
+	// Just keep the hostname and strip off any domain name.
+	row.Name = strings.Split(node.Name, ".")[0]
+
+	row.Age = util.FormatAge(node.CreationTimestamp.Time)
+	row.Version = node.Status.NodeInfo.KubeletVersion
+	row.Runtime = util.LastSplitItem(node.Status.NodeInfo.ContainerRuntimeVersion, "/")
+
+	// Additional columns for AWS EC2 instances are from this point on.
+
+	row.Type = node.Labels["node.kubernetes.io/instance-type"]
+
+	if node.Labels["node-role.kubernetes.io/spot-worker"] != "" {
+		row.Spot = tick
+	} else {
+		row.Spot = "x"
+	}
+
+	row.AZ = util.LastSplitItem(node.Labels["topology.kubernetes.io/zone"], "")
+
+	// The external AWS controller manager sets the node names to the Instance ID,
+	// while the old AWS code in k8s sets it to the DNS name that contains the IP address.
+	// Depending on which one is used will determine if the InstanceID or IP value is set.
+	if strings.HasPrefix(node.Name, "ip-") {
+		row.InstanceID = util.LastSplitItem(node.Spec.ProviderID, "/")
+	} else {
+		row.IP = node.Annotations["alpha.kubernetes.io/provided-node-ip"]
+	}
+
+	// Handle getting a node group for both EKS and kOps.
+	row.InstanceGroup = cmp.Or(
+		node.Labels["kops.k8s.io/instancegroup"],
+		node.Labels["eks.amazonaws.com/nodegroup"],
+	)
+
+	return row
+}
+
+// getNodeStatus looks at the conditions of a node and returns the node's status and any associated warning messages.
 func getNodeStatus(conditions []v1.NodeCondition) (string, []string) {
 	var messages []string
 
 	status := tick
+
 	for _, condition := range conditions {
-		if _, ok := goodStatuses[condition.Type]; !ok {
-			log.Printf("Warning, we haven't covered all conditions - Please add %s to goodStatuses", condition.Type)
+		expectedStatus, ok := goodStatuses[condition.Type]
+		if !ok {
+			log.Printf(
+				"Warning, we haven't covered all conditions - Please add %s to goodStatuses",
+				condition.Type,
+			)
 			continue
 		}
-		if condition.Status != goodStatuses[condition.Type] {
-			messages = append(
-				messages,
-				fmt.Sprintf(
-					"Node condition %s is now: %s, message: \"%s\"",
-					condition.Type,
-					condition.Status,
-					condition.Message,
-				),
-			)
+		if condition.Status != expectedStatus {
+			messages = append(messages, fmt.Sprintf(
+				"Node condition %s is now: %s, message: \"%s\"",
+				condition.Type, condition.Status, condition.Message,
+			))
 		}
 	}
+
 	if len(messages) > 0 {
 		status = "x"
 	}
+
 	return status, messages
+}
+
+// printWarnings displays any warning messages that were collected for the nodes.
+func printWarnings(warnings map[string][]string) {
+	for nodeName, messages := range warnings {
+		if len(messages) > 0 {
+			fmt.Println()
+			for _, message := range messages {
+				fmt.Printf("%s: %s\n", nodeName, message)
+			}
+		}
+	}
 }

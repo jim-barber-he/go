@@ -38,6 +38,10 @@ func (t *Table[R]) Append(r R) {
 
 // Write displays the table to stdout.
 func (t *Table[R]) Write() {
+	if len(t.Rows) == 0 {
+		return
+	}
+
 	tw := tabwriter.NewWriter(os.Stdout, tableMinWidth, tableTabWidth, tablePadding, tablePadChar, tableFlags)
 	fmt.Fprintln(tw, t.Rows[0].TabTitleRow())
 	for _, row := range t.Rows {

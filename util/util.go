@@ -19,7 +19,7 @@ import (
 )
 
 const (
-	// ExitCodeProcessKilled is the exit code used if Run() killed the process for exceeding its timeout.
+	// ExitCodeProcessKilled is the exit code used if RunWithTimeout() killed the process for exceeding its timeout.
 	ExitCodeProcessKilled = 137
 
 	numSecondsPerMinute = 60
@@ -29,8 +29,6 @@ const (
 
 	tabStopWidth = 8
 )
-
-var errCommandTimedOut = errors.New("command timed out")
 
 // FormatAge returns the age in a human readable format of the first 2 non-zero time units from weeks to seconds,
 // or just the seconds if no higher time unit was above 0.
@@ -128,10 +126,10 @@ func LastSplitItem(str, splitChar string) string {
 	return ""
 }
 
-// Run executes a command with a timeout.
+// RunWithTimeout executes a command with a timeout.
 // If the timeout is set to 0 then there is no timeout.
 // Returns an integer suitable for use as an exit code, and an error.
-func Run(timeout int, command string, args ...string) (int, error) {
+func RunWithTimeout(timeout int, command string, args ...string) (int, error) {
 	ctx := context.Background()
 	if timeout > 0 {
 		var cancel context.CancelFunc
@@ -145,18 +143,18 @@ func Run(timeout int, command string, args ...string) (int, error) {
 	process.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 
 	err := process.Run()
-	switch {
-	case errors.Is(ctx.Err(), context.DeadlineExceeded):
+	if errors.Is(ctx.Err(), context.DeadlineExceeded) {
 		if err := syscall.Kill(-process.Process.Pid, syscall.SIGKILL); err != nil {
 			log.Println("Failed to kill process:", err)
 		}
 		return ExitCodeProcessKilled, errCommandTimedOut
-	case err != nil:
+	}
+	if err != nil {
 		var exitError *exec.ExitError
 		if errors.As(err, &exitError) {
-			return exitError.ExitCode(), fmt.Errorf("%s", exitError)
+			return exitError.ExitCode(), fmt.Errorf("process exited with error: %w", exitError)
 		}
-		return 1, err
+		return 1, fmt.Errorf("process run error: %w", err)
 	}
 
 	return 0, nil
@@ -166,15 +164,16 @@ func Run(timeout int, command string, args ...string) (int, error) {
 // It works through all the standard file descriptors until they are exhausted.
 // That's because if a descriptor is being redirected, the call to term.GetSize() will fail.
 func TerminalSize() (int, int, error) {
-	var cols, rows int
-	var err error
-	if cols, rows, err = term.GetSize(int(os.Stdout.Fd())); err == nil {
-		return cols, rows, nil
+	fds := []int{int(os.Stdout.Fd()), int(os.Stderr.Fd()), int(os.Stdin.Fd())}
+	errs := make([]error, 0, len(fds))
+	for i, fd := range fds {
+		cols, rows, err := term.GetSize(fd)
+		if err == nil {
+			return cols, rows, nil
+		}
+		errs[i] = fmt.Errorf("fd %d: %w", fd, err)
 	}
-	if cols, rows, err = term.GetSize(int(os.Stderr.Fd())); err == nil {
-		return cols, rows, nil
-	}
-	return term.GetSize(int(os.Stdin.Fd()))
+	return 0, 0, fmt.Errorf("%w: %v", errTerminalSize, errs)
 }
 
 // TimeTaken is designed to be called via a defer statement to show elapsed time for things like functions/methods.
@@ -233,7 +232,7 @@ func WrapLine(str string, width int) string {
 
 		// If the word contains tabs, write it character by character incrementing pos as we go, except when we
 		// get to a tab character where we increment pos by the number of characters to reach the next tabstop.
-		if strings.Contains(word, `\t`) {
+		if strings.ContainsRune(word, '\t') {
 			for _, r := range word {
 				currentLine.WriteRune(r)
 				if r == '\t' {

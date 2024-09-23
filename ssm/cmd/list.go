@@ -7,6 +7,7 @@ import (
 	"slices"
 
 	"github.com/MakeNowJust/heredoc/v2"
+	"github.com/aws/aws-sdk-go-v2/service/ssm"
 	"github.com/jim-barber-he/go/aws"
 	"github.com/spf13/cobra"
 )
@@ -43,29 +44,14 @@ var (
 		Long:  listLong,
 		Args:  cobra.RangeArgs(1, 2),
 		PreRunE: func(cmd *cobra.Command, _ []string) error {
-			if listOpts.brief && listOpts.full {
-				return fmt.Errorf(
-					"It does not make sense to specify both --brief and --full\n%s",
-					cmd.UsageString(),
-				)
-			}
-			return nil
+			return validateListOptions(cmd)
 		},
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return doList(cmd.Context(), args)
 		},
 		SilenceErrors: true,
 		ValidArgsFunction: func(_ *cobra.Command, args []string, _ string) ([]string, cobra.ShellCompDirective) {
-			var completionHelp []string
-			switch {
-			case len(args) == 0:
-				completionHelp = cobra.AppendActiveHelp(completionHelp, "dev, test*, or prod*")
-			case len(args) == 1:
-				completionHelp = cobra.AppendActiveHelp(completionHelp, "The path in the SSM parameter store to list")
-			default:
-				completionHelp = cobra.AppendActiveHelp(completionHelp, "No more arguments")
-			}
-			return completionHelp, cobra.ShellCompDirectiveNoFileComp
+			return listCompletionHelp(args)
 		},
 	}
 
@@ -83,6 +69,28 @@ func init() {
 	listCmd.Flags().BoolVarP(&listOpts.safeDecrypt, "safe-decrypt", "s", false, "Slower decrypt that can handle errors")
 }
 
+// listCompletionHelp provides shell completion help for the delete command.
+func listCompletionHelp(args []string) ([]string, cobra.ShellCompDirective) {
+	var completionHelp []string
+	switch {
+	case len(args) == 0:
+		completionHelp = cobra.AppendActiveHelp(completionHelp, "dev, test*, or prod*")
+	case len(args) == 1:
+		completionHelp = cobra.AppendActiveHelp(completionHelp, "The path in the SSM parameter store to list")
+	default:
+		completionHelp = cobra.AppendActiveHelp(completionHelp, "No more arguments")
+	}
+	return completionHelp, cobra.ShellCompDirectiveNoFileComp
+}
+
+// validateListOptions validates the list command options.
+func validateListOptions(cmd *cobra.Command) error {
+	if listOpts.brief && listOpts.full {
+		return NewBriefAndFullError(cmd.UsageString())
+	}
+	return nil
+}
+
 // doList will list the SSM Parameter Store parameters below the specified path.
 // args[0] is the name of to AWS Profile to use when accessing the SSM parameter store.
 // args[1] is the path of the SSM parameter to list.
@@ -98,17 +106,18 @@ func doList(ctx context.Context, args []string) error {
 		path = getSSMPath(args[0], "")
 	}
 
-	var err error
-	var params []aws.SSMParameter
-	if listOpts.safeDecrypt {
-		params, err = aws.SSMListSafeDecrypt(ctx, ssmClient, path, listOpts.recursive, listOpts.full)
-	} else {
-		params, err = aws.SSMList(ctx, ssmClient, path, listOpts.recursive, listOpts.full)
-	}
+	params, err := listParameters(ctx, ssmClient, path)
 	if err != nil {
-		return err
+		return fmt.Errorf("%w: %w", errListSSMParameters, err)
 	}
 
+	displayListParameters(params)
+
+	return nil
+}
+
+// displayListParameters displays the list of SSM parameters formatted according to the command line flags.
+func displayListParameters(params []aws.SSMParameter) {
 	// Sort function to sort the parameters by Name when iterating through them.
 	slices.SortFunc(params, func(a, b aws.SSMParameter) int {
 		return cmp.Compare(a.Name, b.Name)
@@ -133,6 +142,12 @@ func doList(ctx context.Context, args []string) error {
 			fmt.Println()
 		}
 	}
+}
 
-	return nil
+// listParameters fetches the SSM parameters handling how decryption is performed based on the safeDecrypt flag.
+func listParameters(ctx context.Context, ssmClient *ssm.Client, path string) ([]aws.SSMParameter, error) {
+	if listOpts.safeDecrypt {
+		return aws.SSMListSafeDecrypt(ctx, ssmClient, path, listOpts.recursive, listOpts.full)
+	}
+	return aws.SSMList(ctx, ssmClient, path, listOpts.recursive, listOpts.full)
 }

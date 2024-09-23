@@ -11,10 +11,11 @@ import (
 )
 
 func main() {
+	// Set log flags to 0 to disable timestamp and other prefixes.
 	log.SetFlags(0)
 
 	ctx := context.Background()
 	if err := cmd.Execute(ctx); err != nil {
-		log.Fatalln(err)
+		log.Fatalf("Error executing command: %v", err)
 	}
 }

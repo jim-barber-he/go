@@ -21,12 +21,14 @@ import (
 	flag "github.com/spf13/pflag"
 	"golang.org/x/sync/errgroup"
 	v1 "k8s.io/api/core/v1"
+	"k8s.io/client-go/kubernetes"
 )
 
 const tick = "\u2713"
 
 var errNoPodsFound = errors.New("no pods found")
 
+// tableRow represents a row in the output table.
 type tableRow struct {
 	Namespace string `title:"NAMESPACE,omitempty"`
 	Name      string `title:"NAME"`
@@ -40,12 +42,12 @@ type tableRow struct {
 	AZ        string `title:"AZ,omitempty"`
 }
 
-// Implement the texttab.TableFormatter interface.
+// TabTitleRow implements the texttab.TableFormatter interface.
 func (tr *tableRow) TabTitleRow() string {
 	return texttable.ReflectedTitleRow(tr)
 }
 
-// Implement the texttab.TableFormatter interface.
+// TabValues implements the texttab.TableFormatter interface.
 func (tr *tableRow) TabValues() string {
 	return texttable.ReflectedTabValues(tr)
 }
@@ -90,7 +92,7 @@ func run(opts options) error {
 	if opts.profileCPU != "" {
 		fp, err := os.Create(opts.profileCPU)
 		if err != nil {
-			return err
+			return fmt.Errorf("failed to create CPU profile file: %w", err)
 		}
 		defer func(fp *os.File) {
 			if err := fp.Close(); err != nil {
@@ -98,96 +100,54 @@ func run(opts options) error {
 			}
 		}(fp)
 		if err := pprof.StartCPUProfile(fp); err != nil {
-			return err
+			return fmt.Errorf("failed to start CPU profile: %w", err)
 		}
 		defer pprof.StopCPUProfile()
 	}
 
 	clientset := k8s.Client(opts.kubeContext)
 
-	// Choose the namespace to look at based on the command line options passed.
-	var namespace string
-	switch {
-	case opts.allNamespaces:
-		namespace = ""
-	case opts.namespace != "":
-		namespace = opts.namespace
-
-		// Verify that the supplied namespace is valid.
-		if _, err := k8s.GetNamespace(clientset, namespace); err != nil {
-			return err
-		}
-	default:
-		namespace = k8s.Namespace(opts.kubeContext)
-	}
-
-	// Fetch the log of nodes and pods in parallel.
-	g := new(errgroup.Group)
-
-	nodes := make(map[string]*v1.Node)
-	g.Go(func() error {
-		nodeList, err := k8s.ListNodes(clientset)
-		if err != nil {
-			return err
-		}
-		for i, node := range nodeList.Items {
-			nodes[node.Name] = &nodeList.Items[i]
-		}
-		return nil
-	})
-
-	var pods *v1.PodList = &v1.PodList{}
-	g.Go(func() error {
-		listPods, err := k8s.ListPods(clientset, namespace, opts.labelSelector)
-		if err != nil {
-			return err
-		}
-		if len(listPods.Items) == 0 {
-			return errNoPodsFound
-		}
-		*pods = *listPods
-		return nil
-	})
-
-	if err := g.Wait(); err != nil {
+	// Select the namespace to look at based on the command line options passed.
+	namespace, err := selectNamespace(clientset, opts)
+	if err != nil {
 		return err
 	}
 
-	var tbl texttable.Table[*tableRow]
-	for i, pod := range pods.Items {
-		var row tableRow
+	// Fetch the list of nodes and pods in parallel.
+	nodes, pods, err := fetchNodesAndPods(clientset, namespace, opts.labelSelector)
+	if err != nil {
+		return err
+	}
 
-		// Get details about the containers in the pod.
-		readyContainers, totalContainers, status, restarts := k8s.PodDetails(&pods.Items[i])
+	// Build and display the table for each pod.
+	buildAndDisplayTable(pods, nodes, opts.allNamespaces)
 
-		// Build up the table contents.
-		if opts.allNamespaces {
-			row.Namespace = pod.Namespace
+	// Memory profiling.
+	if opts.profileMemory != "" {
+		fp, err := os.Create(opts.profileMemory)
+		if err != nil {
+			return fmt.Errorf("failed to create memory profile file: %w", err)
 		}
-		row.Name = pod.Name
-		row.Ready = fmt.Sprintf("%d/%d", readyContainers, totalContainers)
-		row.Status = status
-		row.Restarts = restarts
-		row.Age = util.FormatAge(pod.CreationTimestamp.Time)
-		row.IP = pod.Status.PodIP
-		if row.IP == "" {
-			row.IP = "?"
-		}
-		node := pod.Spec.NodeName
-		if node != "" {
-			row.Node = node
-			if _, ok := nodes[node]; ok {
-				if nodes[node].Labels["node-role.kubernetes.io/spot-worker"] != "" {
-					row.Spot = tick
-				} else {
-					row.Spot = "x"
-				}
-				row.AZ = util.LastSplitItem(nodes[node].Labels["topology.kubernetes.io/zone"], "")
-			} else {
-				row.Node += " (gone)"
+		defer func(fp *os.File) {
+			if err := fp.Close(); err != nil {
+				log.Println(err)
 			}
+		}(fp)
+		// Get up-to-date statistics.
+		runtime.GC()
+		if err := pprof.WriteHeapProfile(fp); err != nil {
+			return fmt.Errorf("failed to write memory profile: %w", err)
 		}
+	}
 
+	return nil
+}
+
+// buildAndDisplayTable builds the table from the pods (with some node details for the pod) and displays it.
+func buildAndDisplayTable(pods *v1.PodList, nodes map[string]*v1.Node, allNamespaces bool) {
+	var tbl texttable.Table[*tableRow]
+	for i := range pods.Items {
+		row := createTableRow(&pods.Items[i], nodes, allNamespaces)
 		tbl.Append(&row)
 	}
 
@@ -201,24 +161,101 @@ func run(opts options) error {
 
 	// Display the table.
 	tbl.Write()
+}
 
-	// Memory profiling.
-	if opts.profileMemory != "" {
-		fp, err := os.Create(opts.profileMemory)
-		if err != nil {
-			return err
-		}
-		defer func(fp *os.File) {
-			if err := fp.Close(); err != nil {
-				log.Println(err)
-			}
-		}(fp)
-		// Get up-to-date statistics.
-		runtime.GC()
-		if err := pprof.WriteHeapProfile(fp); err != nil {
-			return err
+// createTableRow creates a tableRow from a pod and node information.
+func createTableRow(pod *v1.Pod, nodes map[string]*v1.Node, allNamespaces bool) tableRow {
+	var row tableRow
+
+	// Get details about the containers in the pod.
+	readyContainers, totalContainers, status, restarts := k8s.PodDetails(pod)
+
+	// Build up the table contents.
+	if allNamespaces {
+		row.Namespace = pod.Namespace
+	}
+	row.Name = pod.Name
+	row.Ready = fmt.Sprintf("%d/%d", readyContainers, totalContainers)
+	row.Status = status
+	row.Restarts = restarts
+	row.Age = util.FormatAge(pod.CreationTimestamp.Time)
+	row.IP = pod.Status.PodIP
+	if row.IP == "" {
+		row.IP = "?"
+	}
+	node := pod.Spec.NodeName
+	if node != "" {
+		row.Node = node
+		if nodeInfo, ok := nodes[node]; ok {
+			row.Spot = spotStatus(nodeInfo)
+			row.AZ = util.LastSplitItem(nodes[node].Labels["topology.kubernetes.io/zone"], "")
+		} else {
+			row.Node += " (gone)"
 		}
 	}
 
-	return nil
+	return row
+}
+
+// fetchNodesAndPods fetches the list of nodes and pods in parallel.
+func fetchNodesAndPods(
+	clientset *kubernetes.Clientset, namespace string, labelSelector string,
+) (map[string]*v1.Node, *v1.PodList, error) {
+	g := new(errgroup.Group)
+
+	nodes := make(map[string]*v1.Node)
+	g.Go(func() error {
+		nodeList, err := k8s.ListNodes(clientset)
+		if err != nil {
+			return fmt.Errorf("failed to list nodes: %w", err)
+		}
+		for i, node := range nodeList.Items {
+			nodes[node.Name] = &nodeList.Items[i]
+		}
+		return nil
+	})
+
+	pods := &v1.PodList{}
+	g.Go(func() error {
+		listPods, err := k8s.ListPods(clientset, namespace, labelSelector)
+		if err != nil {
+			return fmt.Errorf("failed to list pods: %w", err)
+		}
+		if len(listPods.Items) == 0 {
+			return errNoPodsFound
+		}
+		*pods = *listPods
+		return nil
+	})
+
+	if err := g.Wait(); err != nil {
+		return nil, nil, fmt.Errorf("failed to fetch nodes and/or pods: %w", err)
+	}
+
+	return nodes, pods, nil
+}
+
+// selectNamespace returns the namespace to use based on the command line options.
+// An empty string means all namespaces.
+func selectNamespace(clientset *kubernetes.Clientset, opts options) (string, error) {
+	if opts.allNamespaces {
+		return "", nil
+	}
+	if opts.namespace != "" {
+		// Verify that the supplied namespace is valid.
+		if _, err := k8s.GetNamespace(clientset, opts.namespace); err != nil {
+			return "", fmt.Errorf("invalid namespace: %w", err)
+		}
+	}
+
+	return k8s.Namespace(opts.kubeContext), nil
+}
+
+// spotStatus returns a tick if the node is a spot instance, otherwise an x.
+func spotStatus(node *v1.Node) string {
+	if node.Labels["node-role.kubernetes.io/spot-worker"] != "" {
+		return tick
+	}
+
+	return "x"
 }

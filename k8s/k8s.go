@@ -25,6 +25,14 @@ var (
 	errGettingPods      = errors.New("error getting pods")
 )
 
+func NewContextNotFoundError(context string) error {
+	return &util.Error{
+		Msg:   "context ",
+		Param: context + " not found in kubeconfig",
+	}
+}
+
+// buildConfigFromFlags creates a Kubernetes client configuration from the provided kubeconfig path and context.
 // Based on clientcmd.BuildConfigFromFlags from the kubernetes go-client but with the added `context` parameter to set
 // `CurrentContext`, and with the unneeded masterUrl parameter removed.
 func buildConfigFromFlags(kubeconfigPath, context string) (*rest.Config, error) {
@@ -39,13 +47,13 @@ func buildConfigFromFlags(kubeconfigPath, context string) (*rest.Config, error) 
 func Client(kubeContext string) *kubernetes.Clientset {
 	config, err := buildConfigFromFlags(KubeConfig(), kubeContext)
 	if err != nil {
-		panic(err.Error())
+		panic(fmt.Errorf("failed to build config from flags: %w", err))
 	}
 
 	// Create the clientset
 	clientset, err := kubernetes.NewForConfig(config)
 	if err != nil {
-		panic(err.Error())
+		panic(fmt.Errorf("failed to create Kubernetes clientset: %w", err))
 	}
 
 	return clientset
@@ -65,8 +73,7 @@ func GetNamespace(client kubernetes.Interface, name string) (*v1.Namespace, erro
 func GetNode(client kubernetes.Interface, name string) (*v1.Node, error) {
 	ptr, err := client.CoreV1().Nodes().Get(context.Background(), name, metav1.GetOptions{})
 	if err != nil {
-		err = fmt.Errorf("%w: %w", errGettingNode, err)
-		return nil, err
+		return nil, fmt.Errorf("%w: %w", errGettingNode, err)
 	}
 	return ptr, nil
 }
@@ -74,7 +81,7 @@ func GetNode(client kubernetes.Interface, name string) (*v1.Node, error) {
 // hasPodReadyCondition returns true if the pod has a condition type of "Ready" with a status of "True".
 func hasPodReadyCondition(conditions []v1.PodCondition) bool {
 	for _, condition := range conditions {
-		if condition.Type == "Ready" && condition.Status == "True" {
+		if condition.Type == v1.PodReady && condition.Status == v1.ConditionTrue {
 			return true
 		}
 	}
@@ -84,24 +91,20 @@ func hasPodReadyCondition(conditions []v1.PodCondition) bool {
 // isPodInitializedConditionTrue returns true if the pod has a condition type of "Initialized" with a status of "True".
 func isPodInitializedConditionTrue(status *v1.PodStatus) bool {
 	for _, condition := range status.Conditions {
-		if condition.Type != "Initialized" {
-			continue
+		if condition.Type == v1.PodInitialized && condition.Status == v1.ConditionTrue {
+			return true
 		}
-		return condition.Status == "True"
 	}
 	return false
 }
 
 // isRestartableInitContainer returns true if an init container has its RestartPolicy set to "Always".
 func isRestartableInitContainer(initContainer *v1.Container) bool {
-	if initContainer == nil {
-		return false
-	}
-	if initContainer.RestartPolicy == nil {
+	if initContainer == nil || initContainer.RestartPolicy == nil {
 		return false
 	}
 
-	return *initContainer.RestartPolicy == "Always"
+	return *initContainer.RestartPolicy == v1.ContainerRestartPolicyAlways
 }
 
 // KubeConfig returns the user's kube config file.
@@ -114,8 +117,7 @@ func KubeConfig() string {
 func ListNodes(client kubernetes.Interface) (*v1.NodeList, error) {
 	nodes, err := client.CoreV1().Nodes().List(context.Background(), metav1.ListOptions{})
 	if err != nil {
-		err = fmt.Errorf("%w: %w", errGettingNodes, err)
-		return nil, err
+		return nil, fmt.Errorf("%w: %w", errGettingNodes, err)
 	}
 	return nodes, nil
 }
@@ -129,8 +131,7 @@ func ListPods(client kubernetes.Interface, namespace, labelSelector string) (*v1
 	}
 	pods, err := client.CoreV1().Pods(namespace).List(context.Background(), listOptions)
 	if err != nil {
-		err = fmt.Errorf("%w: %w", errGettingPods, err)
-		return nil, err
+		return nil, fmt.Errorf("%w: %w", errGettingPods, err)
 	}
 	return pods, nil
 }
@@ -141,7 +142,7 @@ func ListPods(client kubernetes.Interface, namespace, labelSelector string) (*v1
 func Namespace(kubeContext string) string {
 	config, err := clientcmd.LoadFromFile(KubeConfig())
 	if err != nil {
-		panic(err.Error())
+		panic(fmt.Errorf("failed to load kubeconfig: %w", err))
 	}
 
 	if kubeContext == "" {
@@ -151,8 +152,13 @@ func Namespace(kubeContext string) string {
 		kubeContext = config.CurrentContext
 	}
 
-	ns := config.Contexts[kubeContext].Namespace
-	if len(ns) == 0 {
+	context, exists := config.Contexts[kubeContext]
+	if !exists {
+		panic(NewContextNotFoundError(kubeContext))
+	}
+
+	ns := context.Namespace
+	if ns == "" {
 		ns = "default"
 	}
 	return ns
@@ -177,7 +183,7 @@ func PodDetails(pod *v1.Pod) (readyContainers, totalContainers int, status, rest
 
 	// If the Pod carries {type:PodScheduled, reason:SchedulingGated}, set status to 'SchedulingGated'.
 	for _, condition := range pod.Status.Conditions {
-		if condition.Type == "PodScheduled" && condition.Reason == "SchedulingGated" {
+		if condition.Type == v1.PodScheduled && condition.Reason == "SchedulingGated" {
 			status = "SchedulingGated"
 		}
 	}

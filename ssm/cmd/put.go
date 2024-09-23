@@ -6,6 +6,7 @@ import (
 	"os"
 
 	"github.com/MakeNowJust/heredoc/v2"
+	"github.com/aws/aws-sdk-go-v2/service/ssm"
 	"github.com/jim-barber-he/go/aws"
 	"github.com/spf13/cobra"
 )
@@ -42,22 +43,7 @@ var (
 		},
 		SilenceErrors: true,
 		ValidArgsFunction: func(_ *cobra.Command, args []string, _ string) ([]string, cobra.ShellCompDirective) {
-			var completionHelp []string
-			switch {
-			case len(args) == 0:
-				completionHelp = cobra.AppendActiveHelp(completionHelp, "dev, test*, or prod*")
-			case len(args) == 1:
-				completionHelp = cobra.AppendActiveHelp(completionHelp, "The path of the SSM parameter")
-			case len(args) == 2:
-				if putOpts.file != "" {
-					completionHelp = cobra.AppendActiveHelp(completionHelp, "No more arguments")
-				} else {
-					completionHelp = cobra.AppendActiveHelp(completionHelp, "The parameter value")
-				}
-			default:
-				completionHelp = cobra.AppendActiveHelp(completionHelp, "No more arguments")
-			}
-			return completionHelp, cobra.ShellCompDirectiveNoFileComp
+			return putCompletionHelp(args)
 		},
 	}
 
@@ -75,6 +61,26 @@ func init() {
 	putCmd.Flags().BoolVarP(&putOpts.verbose, "verbose", "v", false, "Show the value set for the parameter")
 }
 
+// putCompletionHelp provides shell completion help for the put command.
+func putCompletionHelp(args []string) ([]string, cobra.ShellCompDirective) {
+	var completionHelp []string
+	switch {
+	case len(args) == 0:
+		completionHelp = cobra.AppendActiveHelp(completionHelp, "dev, test*, or prod*")
+	case len(args) == 1:
+		completionHelp = cobra.AppendActiveHelp(completionHelp, "The path of the SSM parameter")
+	case len(args) == 2:
+		if putOpts.file != "" {
+			completionHelp = cobra.AppendActiveHelp(completionHelp, "No more arguments")
+		} else {
+			completionHelp = cobra.AppendActiveHelp(completionHelp, "The parameter value")
+		}
+	default:
+		completionHelp = cobra.AppendActiveHelp(completionHelp, "No more arguments")
+	}
+	return completionHelp, cobra.ShellCompDirectiveNoFileComp
+}
+
 // doPut stores a parameter and its value into the SSM parameter store.
 // args[0] is the name of to AWS Profile to use when accessing the SSM parameter store.
 // args[1] is the path of the SSM parameter to put.
@@ -86,25 +92,35 @@ func doPut(ctx context.Context, args []string) error {
 
 	param := getSSMPath(args[0], args[1])
 
-	var value string
-	if putOpts.file != "" {
-		if len(args) > 2 {
-			return fmt.Errorf("VALUE should not be provided when --file is used")
-		}
-		bytes, err := os.ReadFile(putOpts.file)
-		if err != nil {
-			return err
-		}
-		value = string(bytes)
-	} else {
-		if len(args) == 2 {
-			return fmt.Errorf("VALUE is required when --file is not used")
-		}
-		value = args[2]
+	value, err := getPutValue(args)
+	if err != nil {
+		return err
 	}
 
+	ssmParam := createPutSSMParameter(param, value)
+
+	// Return if the parameter is already set to the same value and type.
+	if unchanged, err := isPutValueUnchanged(ctx, ssmClient, param, ssmParam); err == nil && unchanged {
+		fmt.Println("Value unchanged.")
+		return nil
+	}
+
+	version, err := aws.SSMPut(ctx, ssmClient, &ssmParam)
+	if err != nil {
+		return fmt.Errorf("%w: %w", errPutSSMParameter, err)
+	}
+	if putOpts.verbose {
+		fmt.Printf("Setting %s = %s\n", param, value)
+	}
+	fmt.Printf("Parameter %s updated to version %d\n", param, version)
+
+	return nil
+}
+
+// createPutSSMParameter creates an SSMParameter struct based on the provided values.
+func createPutSSMParameter(name, value string) aws.SSMParameter {
 	ssmParam := aws.SSMParameter{
-		Name:  param,
+		Name:  name,
 		Value: value,
 	}
 	if putOpts.secure {
@@ -113,22 +129,34 @@ func doPut(ctx context.Context, args []string) error {
 	} else {
 		ssmParam.Type = "String"
 	}
+	return ssmParam
+}
 
-	// Return if the parameter is already set to the same value and type.
+// getPutValue retrieves the value to put into the SSM parameter store.
+func getPutValue(args []string) (string, error) {
+	if putOpts.file != "" {
+		if len(args) > 2 {
+			return "", errValueWithFile
+		}
+		bytes, err := os.ReadFile(putOpts.file)
+		if err != nil {
+			return "", fmt.Errorf("%w: %w", errReadFile, err)
+		}
+		return string(bytes), nil
+	}
+	if len(args) == 2 {
+		return "", errValueRequired
+	}
+	return args[2], nil
+}
+
+// isPutValueUnchanged checks if the parameter is already set to the same value and type.
+func isPutValueUnchanged(
+	ctx context.Context, ssmClient *ssm.Client, param string, ssmParam aws.SSMParameter,
+) (bool, error) {
 	p, err := aws.SSMGet(ctx, ssmClient, param)
-	if err == nil && p.Value == value && p.Type == ssmParam.Type {
-		fmt.Println("Value unchanged.")
-		return nil
-	}
-
-	version, err := aws.SSMPut(ctx, ssmClient, &ssmParam)
 	if err != nil {
-		return err
+		return false, fmt.Errorf("%w: %w", errGetSSMParameter, err)
 	}
-	if putOpts.verbose {
-		fmt.Printf("Setting %s = %s\n", param, value)
-	}
-	fmt.Printf("Parameter %s updated to version %d\n", param, version)
-
-	return nil
+	return p.Value == ssmParam.Value && p.Type == ssmParam.Type, nil
 }

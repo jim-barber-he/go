@@ -25,21 +25,26 @@ var deleteCmd = &cobra.Command{
 	},
 	SilenceErrors: true,
 	ValidArgsFunction: func(_ *cobra.Command, args []string, _ string) ([]string, cobra.ShellCompDirective) {
-		var completionHelp []string
-		switch {
-		case len(args) == 0:
-			completionHelp = cobra.AppendActiveHelp(completionHelp, "dev, test*, or prod*")
-		case len(args) == 1:
-			completionHelp = cobra.AppendActiveHelp(completionHelp, "The path of the SSM parameter")
-		default:
-			completionHelp = cobra.AppendActiveHelp(completionHelp, "No more arguments")
-		}
-		return completionHelp, cobra.ShellCompDirectiveNoFileComp
+		return deleteCompletionHelp(args)
 	},
 }
 
 func init() {
 	rootCmd.AddCommand(deleteCmd)
+}
+
+// deleteCompletionHelp provides shell completion help for the delete command.
+func deleteCompletionHelp(args []string) ([]string, cobra.ShellCompDirective) {
+	var completionHelp []string
+	switch {
+	case len(args) == 0:
+		completionHelp = cobra.AppendActiveHelp(completionHelp, "dev, test*, or prod*")
+	case len(args) == 1:
+		completionHelp = cobra.AppendActiveHelp(completionHelp, "The path of the SSM parameter")
+	default:
+		completionHelp = cobra.AppendActiveHelp(completionHelp, "No more arguments")
+	}
+	return completionHelp, cobra.ShellCompDirectiveNoFileComp
 }
 
 // doDelete deletes a parameter from the SSM parameter store.
