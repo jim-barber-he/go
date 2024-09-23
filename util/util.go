@@ -165,7 +165,7 @@ func RunWithTimeout(timeout int, command string, args ...string) (int, error) {
 // That's because if a descriptor is being redirected, the call to term.GetSize() will fail.
 func TerminalSize() (int, int, error) {
 	fds := []int{int(os.Stdout.Fd()), int(os.Stderr.Fd()), int(os.Stdin.Fd())}
-	errs := make([]error, 0, len(fds))
+	errs := make([]error, len(fds))
 	for i, fd := range fds {
 		cols, rows, err := term.GetSize(fd)
 		if err == nil {
