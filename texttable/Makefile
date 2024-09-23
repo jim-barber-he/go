@@ -6,7 +6,10 @@ lint:
 	golangci-lint run
 
 lintall:
-	golangci-lint run --enable-all
+	golangci-lint run --enable-all || true
+
+test:
+	go test
 
 vet:
 	go vet

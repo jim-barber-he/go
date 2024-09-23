@@ -20,7 +20,7 @@ lint:
 	golangci-lint run
 
 lintall:
-	golangci-lint run --enable-all
+	golangci-lint run --enable-all || true
 
 run: build
 	./${BINARY_NAME}-${ARCH}

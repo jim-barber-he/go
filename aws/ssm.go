@@ -58,7 +58,10 @@ func SSMClient(cfg aws.Config) *ssm.Client {
 // SSMDelete deletes a parameter by name from the SSM parameter store.
 func SSMDelete(ctx context.Context, ssmClient *ssm.Client, name string) error {
 	_, err := ssmClient.DeleteParameter(ctx, &ssm.DeleteParameterInput{Name: aws.String(name)})
-	return err
+	if err != nil {
+		return fmt.Errorf("%w: %w", NewParameterDeleteError(name), err)
+	}
+	return nil
 }
 
 // SSMDescribeParameter returns the ID of the encryption key and the last user who set/modified an SSM parameter.
@@ -74,41 +77,41 @@ func SSMDescribeParameter(ctx context.Context, ssmClient *ssm.Client, name strin
 		},
 	})
 	if err != nil {
-		return "", "", err
+		return "", "", fmt.Errorf("%w: %w", NewParameterDescribeError(name), err)
 	}
-	var keyID, lastModifiedUser string
-	if len(output.Parameters) == 1 {
-		if string(output.Parameters[0].Type) == parameterTypeSecureString {
-			keyID = *output.Parameters[0].KeyId
-		}
-		lastModifiedUser = *output.Parameters[0].LastModifiedUser
-		/*
-			Also output.Parameters has available...
-			- AllowedPattern
-			- Description
-			- Policies ([]types.ParameterInlinePolicy{}
-			- Tier
-			Along with these that GetParameter also returns...
-			- ARN
-			- DataType
-			- LastModifiedDate
-			- Name
-			- Version
-		*/
-	} else {
-		return "", "", fmt.Errorf("%d parameters were returned instead of just 1", len(output.Parameters))
+
+	if len(output.Parameters) != 1 {
+		return "", "", NewOneParameterError(len(output.Parameters))
 	}
+
+	param := output.Parameters[0]
+	keyID := ""
+	if param.Type == types.ParameterTypeSecureString {
+		keyID = aws.ToString(param.KeyId)
+	}
+	lastModifiedUser := aws.ToString(param.LastModifiedUser)
+	/*
+		Also output.Parameters has available...
+		- AllowedPattern
+		- Description
+		- Policies ([]types.ParameterInlinePolicy{}
+		- Tier
+		Along with these that GetParameter also returns...
+		- ARN
+		- DataType
+		- LastModifiedDate
+		- Name
+		- Version
+	*/
 
 	return keyID, lastModifiedUser, nil
 }
 
 // SSMGet returns a populated SSMParameter structure populated with details of a named SSM parameter.
 func SSMGet(ctx context.Context, ssmClient *ssm.Client, name string) (SSMParameter, error) {
-	var err error
-	var output *ssm.GetParameterOutput
 	var p SSMParameter
 
-	output, err = ssmClient.GetParameter(ctx, &ssm.GetParameterInput{
+	output, err := ssmClient.GetParameter(ctx, &ssm.GetParameterInput{
 		Name:           aws.String(name),
 		WithDecryption: aws.Bool(true),
 	})
@@ -116,23 +119,23 @@ func SSMGet(ctx context.Context, ssmClient *ssm.Client, name string) (SSMParamet
 		p.Error = fmt.Sprint(err)
 		output, err = ssmClient.GetParameter(ctx, &ssm.GetParameterInput{Name: aws.String(name)})
 		if err != nil {
-			return SSMParameter{}, err
+			return SSMParameter{}, fmt.Errorf("%w: %w", NewParameterGetError(name), err)
 		}
 		// Clear the value since it failed to decrypt.
-		*output.Parameter.Value = ""
+		output.Parameter.Value = aws.String("")
 	}
 
-	p.ARN = *output.Parameter.ARN
+	p.ARN = aws.ToString(output.Parameter.ARN)
 	// For some reason some SSM parameters had no data type set... These seem to show in the GUI as text.
 	if output.Parameter.DataType == nil {
 		p.DataType = "text"
 	} else {
-		p.DataType = *output.Parameter.DataType
+		p.DataType = aws.ToString(output.Parameter.DataType)
 	}
-	p.LastModifiedDate = *output.Parameter.LastModifiedDate
-	p.Name = *output.Parameter.Name
+	p.LastModifiedDate = aws.ToTime(output.Parameter.LastModifiedDate)
+	p.Name = aws.ToString(output.Parameter.Name)
 	p.Type = string(output.Parameter.Type)
-	p.Value = *output.Parameter.Value
+	p.Value = aws.ToString(output.Parameter.Value)
 	p.Version = output.Parameter.Version
 
 	p.KeyID, p.LastModifiedUser, _ = SSMDescribeParameter(ctx, ssmClient, name)
@@ -154,18 +157,18 @@ func SSMList(ctx context.Context, ssmClient *ssm.Client, path string, recursive,
 	for paginator.HasMorePages() {
 		output, err := paginator.NextPage(ctx)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("%w : %w", errParameterGetByPath, err)
 		}
 		for _, p := range output.Parameters {
-			var param SSMParameter
-
-			param.ARN = *p.ARN
-			param.DataType = *p.DataType
-			param.LastModifiedDate = *p.LastModifiedDate
-			param.Name = *p.Name
-			param.Type = string(p.Type)
-			param.Value = *p.Value
-			param.Version = p.Version
+			param := SSMParameter{
+				ARN:              aws.ToString(p.ARN),
+				DataType:         aws.ToString(p.DataType),
+				LastModifiedDate: aws.ToTime(p.LastModifiedDate),
+				Name:             aws.ToString(p.Name),
+				Type:             string(p.Type),
+				Value:            aws.ToString(p.Value),
+				Version:          p.Version,
+			}
 
 			if full {
 				param.KeyID, param.LastModifiedUser, _ = SSMDescribeParameter(ctx, ssmClient, param.Name)
@@ -195,17 +198,17 @@ func SSMListSafeDecrypt(
 	for paginator.HasMorePages() {
 		output, err := paginator.NextPage(ctx)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("%w : %w", errParameterGetByPath, err)
 		}
 		for _, p := range output.Parameters {
-			var param SSMParameter
-
-			param.ARN = *p.ARN
-			param.DataType = *p.DataType
-			param.LastModifiedDate = *p.LastModifiedDate
-			param.Name = *p.Name
-			param.Type = string(p.Type)
-			param.Version = p.Version
+			param := SSMParameter{
+				ARN:              aws.ToString(p.ARN),
+				DataType:         aws.ToString(p.DataType),
+				LastModifiedDate: aws.ToTime(p.LastModifiedDate),
+				Name:             aws.ToString(p.Name),
+				Type:             string(p.Type),
+				Version:          p.Version,
+			}
 
 			if param.Type == parameterTypeSecureString {
 				par, err := SSMGet(ctx, ssmClient, param.Name)
@@ -216,7 +219,7 @@ func SSMListSafeDecrypt(
 					param.Value = par.Value
 				}
 			} else {
-				param.Value = *p.Value
+				param.Value = aws.ToString(p.Value)
 			}
 
 			if full {
@@ -245,7 +248,7 @@ func SSMPut(ctx context.Context, ssmClient *ssm.Client, param *SSMParameter) (in
 	}
 	output, err := ssmClient.PutParameter(ctx, input)
 	if err != nil {
-		return -1, err
+		return -1, fmt.Errorf("%w: %w", NewParameterPutError(param.Name), err)
 	}
 	return output.Version, nil
 }

@@ -15,9 +15,11 @@ import (
 	"crypto/md5"
 	"crypto/tls"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"log/slog"
 	"os"
+	"os/exec"
 	"strconv"
 	"strings"
 	"time"
@@ -26,29 +28,99 @@ import (
 	redis "github.com/redis/go-redis/v9"
 )
 
+// Default Values.
 const (
-	// Default Values.
-	defaultRedisPort              int = 6379
-	defaultRedisReconnectAttempts int = 5
-	defaultRedisTimeout           int = 30
-	defaultRedisReconnectBackoff  int = 5
-	defaultLockGrace              int = 40
-	defaultLockRelease            int = 86400
-
-	/* Exit codes:
-	< 200 : Acquired lock; executed command; returned exit code of the command.
-	= 200 : Success. Delete succeeded OR lock not acquired, but normal execution.
-	= 201 : Failure. Error encountered.
-	= 202 : Failure. Lock timed out.
-	*/
-	golockSuccess int = 200
-	golockFailure int = 201
-	golockTimeout int = 202
+	defLockHost              string = "localhost"
+	defLockPort              int    = 6379
+	defLockDB                int    = 0
+	defLockTLS               bool   = false
+	defLockTLSSkipVerify     bool   = false
+	defLockRedisTimeout      int    = 30
+	defLockReconnectAttempts int    = 5
+	defLockReconnectBackoff  int    = 5
+	defLockGrace             int    = 40
+	defLockRelease           int    = 86400
+	defLockPrefix            string = "cronlock."
+	defLockReset             string = "no"
+	defLockTimeout           int    = 0
 )
 
-var ctx = context.Background()
+// Environment Variables.
+const (
+	envLockHost              = "CRONLOCK_HOST"
+	envLockPort              = "CRONLOCK_PORT"
+	envLockDB                = "CRONLOCK_DB"
+	envLockTLS               = "CRONLOCK_TLS"
+	envLockTLSSkipVerify     = "CRONLOCK_TLS_SKIP_VERIFY"
+	envLockRedisTimeout      = "CRONLOCK_REDIS_TIMEOUT"
+	envLockReconnectAttempts = "CRONLOCK_RECONNECT_ATTEMPTS"
+	envLockReconnectBackoff  = "CRONLOCK_RECONNECT_BACKOFF"
+	envLockGrace             = "CRONLOCK_GRACE"
+	envLockRelease           = "CRONLOCK_RELEASE"
+	envLockPrefix            = "CRONLOCK_PREFIX"
+	envLockKey               = "CRONLOCK_KEY"
+	envLockReset             = "CRONLOCK_RESET"
+	envLockTimeout           = "CRONLOCK_TIMEOUT"
+	envLockVerbose           = "CRONLOCK_VERBOSE"
+)
 
-func redisConnect(connOpts *redis.Options) (*redis.Client, error) {
+// Exit codes.
+// An exit code less than 200 means a lock was acquired and is the exit code of the command that was run.
+const (
+	exitSuccess int = 200 // Success. Delete succeeded OR lock not acquired, but normal execution.
+	exitFailure int = 201 // Failure. Error encountered.
+	exitTimeout int = 202 // Failure. Lock timed out.
+)
+
+func NewRedisPingError(response string) error {
+	return &util.Error{
+		Msg:   "could not ping Redis: ",
+		Param: response,
+	}
+}
+
+// getRedisKey returns the name of the Redis key to use for the lock.
+// If not set via the environment, then one is calculated based on the MD5 hash of the command and its arguments.
+func getRedisKey(lockPrefix, command string) string {
+	redisKey := os.Getenv(envLockKey)
+	if redisKey == "" {
+		hash := md5.Sum([]byte(command))
+		redisKey = hex.EncodeToString(hash[:])
+	}
+
+	return lockPrefix + redisKey
+}
+
+// getRedisOptions returns a redis.Options struct with the values set from the environment variables.
+func getRedisOptions() *redis.Options {
+	redisReconnectBackoff := time.Second * time.Duration(
+		util.GetEnvInt(envLockReconnectBackoff, defLockReconnectBackoff),
+	)
+	opts := &redis.Options{
+		Addr: fmt.Sprintf(
+			"%s:%d", util.GetEnv(envLockHost, defLockHost), util.GetEnvInt(envLockPort, defLockPort),
+		),
+		DB:              util.GetEnvInt(envLockDB, defLockDB),
+		DialTimeout:     time.Second * time.Duration(util.GetEnvInt(envLockRedisTimeout, defLockRedisTimeout)),
+		MaxRetries:      util.GetEnvInt(envLockReconnectAttempts, defLockReconnectAttempts),
+		MaxRetryBackoff: redisReconnectBackoff,
+		MinRetryBackoff: redisReconnectBackoff,
+	}
+	if auth := os.Getenv("CRONLOCK_AUTH"); auth != "" {
+		opts.Password = auth
+	}
+	if tlsEnabled := util.GetEnvBool(envLockTLS, defLockTLS); tlsEnabled {
+		opts.TLSConfig = &tls.Config{
+			MinVersion:         tls.VersionTLS12,
+			InsecureSkipVerify: util.GetEnvBool(envLockTLSSkipVerify, defLockTLSSkipVerify),
+		}
+	}
+
+	return opts
+}
+
+// redisConnect connects to a Redis server with the supplied options and returns a client.
+func redisConnect(ctx context.Context, connOpts *redis.Options) (*redis.Client, error) {
 	slog.Debug("Connecting to redis at " + connOpts.Addr)
 
 	rdb := redis.NewClient(connOpts)
@@ -56,115 +128,63 @@ func redisConnect(connOpts *redis.Options) (*redis.Client, error) {
 	response, err := rdb.Ping(ctx).Result()
 	switch {
 	case err != nil:
-		return nil, fmt.Errorf("Could not connect to Redis: %v", err)
+		return nil, fmt.Errorf("could not connect to Redis: %w", err)
 	case response != "PONG":
-		return nil, fmt.Errorf("Could not ping Redis: %s", response)
+		return nil, NewRedisPingError(response)
 	}
 
 	return rdb, nil
 }
 
-func run() int {
-	// Command to run and its arguments represented as a string.
-	command := strings.Join(os.Args[1:], " ")
-
-	// Redis host and port.
-	redisHost := util.GetEnv("CRONLOCK_HOST", "localhost")
-	redisPort := util.GetEnvInt("CRONLOCK_PORT", defaultRedisPort)
-
-	// Redis database to connect to.
-	redisDB := util.GetEnvInt("CRONLOCK_DB", 0)
-
-	// Redis TLS options.
-	redisTLS := util.GetEnvBool("CRONLOCK_TLS", false)
-	redisTLSSkipVerify := util.GetEnvBool("CRONLOCK_TLS_SKIP_VERIFY", false)
-
-	// Length of time to wait for a response from Redis before considering it in an errored state.
-	// Prevents waiting forever for a response from Redis.
-	redisTimeout := time.Duration(util.GetEnvInt("CRONLOCK_REDIS_TIMEOUT", defaultRedisTimeout)) * time.Second
-
-	// Number of times to try to reconnect to Redis before erroring.
-	redisReconnectAttempts := util.GetEnvInt("CRONLOCK_RECONNECT_ATTEMPTS", defaultRedisReconnectAttempts)
-
-	// Length of time to increase the wait between Redis reconnects.
-	// Acts as a failsafe to allow Redis to be started before trying to reconnect.
-	// Set to 0 to retry the connection immediately.
-	redisReconnectBackoff := time.Second * time.Duration(
-		util.GetEnvInt("CRONLOCK_RECONNECT_BACKOFF", defaultRedisReconnectBackoff),
-	)
-
-	// How many seconds a lock should at least persist.
-	// Makes sure that fast running jobs will not execute many times if run from multiple servers with clock drift.
-	// Recommend using a grace of at least 30s.
-	lockGrace := util.GetEnvInt("CRONLOCK_GRACE", defaultLockGrace)
-
-	// Determines how long a lock can persist at most.
-	// Acts as a failsafe so there can be no locks that persist forever in case of failure.
-	// Shouldn't be less than CRONLOCK_GRACE.
-	lockRelease := util.GetEnvInt("CRONLOCK_RELEASE", defaultLockRelease)
-
-	// Prefix used by all Redis keys set by this program.
-	lockPrefix := util.GetEnv("CRONLOCK_PREFIX", "cronlock.")
-
-	// Unique key for this command in the global Redis server.
-	// If not set, then one is calculated based on the MD5 hash of the command and its arguments.
-	redisKey := os.Getenv("CRONLOCK_KEY")
-	if redisKey == "" {
-		hash := md5.Sum([]byte(command))
-		redisKey = hex.EncodeToString(hash[:])
-	}
-	redisKey = lockPrefix + redisKey
-
-	// Remove existing lock in Redis and then exit.
-	reset := util.GetEnv("CRONLOCK_RESET", "no")
-
-	// How long the command can run in seconds before it is killed.
-	timeout := util.GetEnvInt("CRONLOCK_TIMEOUT", 0)
-
-	// Configure connection to Redis.
-	connOpts := &redis.Options{
-		Addr:            fmt.Sprintf("%s:%d", redisHost, redisPort),
-		DB:              redisDB,
-		DialTimeout:     redisTimeout,
-		MaxRetries:      redisReconnectAttempts,
-		MaxRetryBackoff: redisReconnectBackoff,
-		MinRetryBackoff: redisReconnectBackoff,
-	}
-	if auth := os.Getenv("CRONLOCK_AUTH"); auth != "" {
-		connOpts.Password = auth
-	}
-	if redisTLS {
-		tlsOpts := &tls.Config{
-			MinVersion: tls.VersionTLS12,
-		}
-		if redisTLSSkipVerify {
-			tlsOpts.InsecureSkipVerify = redisTLSSkipVerify
-		}
-		connOpts.TLSConfig = tlsOpts
-	}
-
-	// Connect to Redis.
-	rdb, err := redisConnect(connOpts)
-	if err != nil {
-		slog.Error(err.Error())
-		return golockFailure
-	}
-	defer rdb.Close()
-
-	// Reset mode. Remove the lock and exit.
+// resetKey will remove the supplied key from Redis if envLockReset is set to "yes".
+// Will return 0 if envLockReset is not "yes".
+func resetKey(ctx context.Context, rdb *redis.Client, redisKey string) int {
+	reset := util.GetEnv(envLockReset, defLockReset)
 	if reset == "yes" {
 		slog.Debug(fmt.Sprintf("Removing %s key", redisKey))
 		removed, err := rdb.Del(ctx, redisKey).Result()
 		if err != nil {
-			slog.Error(err.Error())
-			return golockFailure
+			slog.Error(fmt.Sprintf("Failed to remove key %s: %v", redisKey, err))
+
+			return exitFailure
 		}
 		if removed == 0 || removed == 1 {
-			return golockSuccess
+			return exitSuccess
 		}
 		slog.Error("Unable to remove " + redisKey)
-		return golockFailure
+
+		return exitFailure
 	}
+
+	return 0
+}
+
+func run() int {
+	ctx := context.Background()
+
+	// Connect to Redis.
+	rdb, err := redisConnect(ctx, getRedisOptions())
+	if err != nil {
+		slog.Error(err.Error())
+
+		return exitFailure
+	}
+	defer rdb.Close()
+
+	// Command to run and its arguments represented as a string.
+	command := strings.Join(os.Args[1:], " ")
+
+	// The key to use in Redis.
+	redisKey := getRedisKey(util.GetEnv(envLockPrefix, defLockPrefix), command)
+
+	// If envLockReset is true, this will remove redisKey from Redis and return a 2xx code.
+	if ret := resetKey(ctx, rdb, redisKey); ret != 0 {
+		return ret
+	}
+
+	// Control how long the lock is held for.
+	lockGrace := util.GetEnvInt(envLockGrace, defLockGrace)
+	lockRelease := util.GetEnvInt(envLockRelease, defLockRelease)
 
 	// Times that the lock will be completed.
 	// expireAtMax is used when the lock is acquired to set the longest time we want to keep it for.
@@ -178,7 +198,8 @@ func run() int {
 	acquired, err := rdb.SetNX(ctx, redisKey, expireAtMax, time.Duration(lockRelease)*time.Second).Result()
 	if err != nil {
 		slog.Error(err.Error())
-		return golockFailure
+
+		return exitFailure
 	}
 
 	if acquired {
@@ -188,59 +209,63 @@ func run() int {
 
 		expiresAt, err := rdb.Get(ctx, redisKey).Result()
 		if err != nil {
-			slog.Error(err.Error())
-			return golockFailure
+			slog.Error(fmt.Errorf("failed to get expiration time: %w", err).Error())
+
+			return exitFailure
 		}
 		expiresIn, _ := strconv.Atoi(expiresAt)
 		expiresIn -= int(time.Now().UTC().Unix())
 
 		switch {
 		case expiresIn > 0:
-			slog.Debug(
-				fmt.Sprintf(
-					"Lock %s acquired by another process (expires in %ds)",
-					redisKey,
-					expiresIn,
-				),
-			)
-			return golockSuccess
+			slog.Debug(fmt.Sprintf(
+				"Lock %s acquired by another process (expires in %ds)", redisKey, expiresIn,
+			))
+
+			return exitSuccess
 		case expiresIn == 0:
 			slog.Debug(fmt.Sprintf("Lock %s acquired by another process but expiring now", redisKey))
-			return golockSuccess
+
+			return exitSuccess
+		default:
+			slog.Debug(fmt.Sprintf(
+				"Lock %s acquired by another process but expired %ds ago", redisKey, -expiresIn,
+			))
 		}
-		slog.Debug(
-			fmt.Sprintf("Lock %s acquired by another process but expired %ds ago", redisKey, -expiresIn),
-		)
 
 		// Handle expired locks that were not cleaned up properly or not cleaned up yet because the golock that
 		// requested it is still running.
 		// Try to acquire a lock again, confirming that no other running golock beats us to it.
 		reacquire, err := rdb.GetSet(ctx, redisKey, expireAtMax).Result()
 		if err != nil {
-			slog.Error(err.Error())
-			return golockFailure
+			slog.Error(fmt.Errorf("failed to acquire lock: %w", err).Error())
+
+			return exitFailure
 		}
 		expiresIn, _ = strconv.Atoi(reacquire)
 		expiresIn -= int(time.Now().UTC().Unix())
 		if expiresIn > 0 {
-			slog.Debug(
-				fmt.Sprintf(
-					"Lock %s was just now acquired by a different process (expires in %ds)",
-					redisKey,
-					expiresIn,
-				),
-			)
-			return golockSuccess
+			slog.Debug(fmt.Sprintf(
+				"Lock %s was just now acquired by a different process (expires in %ds)",
+				redisKey,
+				expiresIn,
+			))
+
+			return exitSuccess
 		}
 	}
 
 	// Run command with an optional timeout.
-	exitCode, _ := util.Run(timeout, os.Args[1], os.Args[2:]...)
-	if timeout > 0 {
-		if exitCode == util.ExitCodeProcessKilled {
-			slog.Error(fmt.Sprintf("emergency: had to kill [%s] after %ds timeout", command, timeout))
-			exitCode = golockTimeout
-		}
+	timeout := util.GetEnvInt(envLockTimeout, defLockTimeout)
+	exitCode, err := util.RunWithTimeout(timeout, os.Args[1], os.Args[2:]...)
+	if timeout > 0 && exitCode == util.ExitCodeProcessKilled {
+		slog.Error(fmt.Sprintf("emergency: had to kill [%s] after %ds timeout", command, timeout))
+		exitCode = exitTimeout
+	}
+	// Show any errors from trying to run the command that weren't from the command itself.
+	var exitError *exec.ExitError
+	if !errors.As(err, &exitError) {
+		slog.Error(err.Error())
 	}
 
 	// Command is complete. We can set the key to expire once the minimum grace period has passed.
@@ -259,7 +284,7 @@ func run() int {
 }
 
 func main() {
-	if os.Getenv("CRONLOCK_VERBOSE") == "yes" {
+	if os.Getenv(envLockVerbose) == "yes" {
 		slog.SetLogLoggerLevel(slog.LevelDebug)
 	}
 

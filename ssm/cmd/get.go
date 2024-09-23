@@ -2,9 +2,11 @@ package cmd
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"github.com/MakeNowJust/heredoc/v2"
+	"github.com/aws/aws-sdk-go-v2/service/ssm/types"
 	"github.com/jim-barber-he/go/aws"
 	"github.com/spf13/cobra"
 )
@@ -33,16 +35,7 @@ var (
 		},
 		SilenceErrors: true,
 		ValidArgsFunction: func(_ *cobra.Command, args []string, _ string) ([]string, cobra.ShellCompDirective) {
-			var completionHelp []string
-			switch {
-			case len(args) == 0:
-				completionHelp = cobra.AppendActiveHelp(completionHelp, "dev, test*, or prod*")
-			case len(args) == 1:
-				completionHelp = cobra.AppendActiveHelp(completionHelp, "The path of the SSM parameter")
-			default:
-				completionHelp = cobra.AppendActiveHelp(completionHelp, "No more arguments")
-			}
-			return completionHelp, cobra.ShellCompDirectiveNoFileComp
+			return getCompletionHelp(args)
 		},
 	}
 
@@ -55,6 +48,20 @@ func init() {
 	getCmd.Flags().BoolVarP(&getOpts.full, "full", "f", false, "Show all details for the parameter")
 }
 
+// getCompletionHelp provides shell completion help for the delete command.
+func getCompletionHelp(args []string) ([]string, cobra.ShellCompDirective) {
+	var completionHelp []string
+	switch {
+	case len(args) == 0:
+		completionHelp = cobra.AppendActiveHelp(completionHelp, "dev, test*, or prod*")
+	case len(args) == 1:
+		completionHelp = cobra.AppendActiveHelp(completionHelp, "The path of the SSM parameter")
+	default:
+		completionHelp = cobra.AppendActiveHelp(completionHelp, "No more arguments")
+	}
+	return completionHelp, cobra.ShellCompDirectiveNoFileComp
+}
+
 // doGet fetches a parameter from the SSM parameter store.
 // args[0] is the name of to AWS Profile to use when accessing the SSM parameter store.
 // args[1] is the path of the SSM parameter to get.
@@ -65,9 +72,13 @@ func doGet(ctx context.Context, args []string) error {
 
 	param := getSSMPath(args[0], args[1])
 	p, err := aws.SSMGet(ctx, ssmClient, param)
-	// I don't know how to handle errors properly... i.e. I don't know how to test if it was a ParameterNotFound error.
 	if err != nil {
-		return fmt.Errorf("%s%s", err, param)
+		var notFound *types.ParameterNotFound
+		if errors.As(err, &notFound) {
+			fmt.Printf("Parameter %s is not found.", args[1])
+			return nil
+		}
+		return fmt.Errorf("%w: %w", errGetSSMParameter, err)
 	}
 
 	if getOpts.full {

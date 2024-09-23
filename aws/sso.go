@@ -69,7 +69,7 @@ func Login(ctx context.Context, details *LoginSessionDetails) aws.Config {
 		cfg, err = config.LoadDefaultConfig(ctx)
 	}
 	if err != nil {
-		log.Panic(err)
+		log.Panicf("failed to load AWS config: %v", err)
 	}
 
 	// Check if the AWS SSO session is valid.
@@ -79,7 +79,9 @@ func Login(ctx context.Context, details *LoginSessionDetails) aws.Config {
 	}
 
 	// Session is not valid, so need to perform an AWS SSO login.
-	ssoLogin(ctx, cfg)
+	if err := ssoLogin(ctx, cfg); err != nil {
+		log.Panicf("failed to perform AWS SSO login: %v", err)
+	}
 
 	/* Hmmm I don't have to fetch cfg again. It seems independent of the SSO sign-in...
 	   I can just return the one I got even if AWS SSO login hasn't been performed yet after an aws sso logout.
@@ -102,7 +104,7 @@ func Login(ctx context.Context, details *LoginSessionDetails) aws.Config {
 // It will open a web browser for the AWS SSO with the appropriate client code.
 // Once the user has performed the AWS SSO login, the details of the session are written to the same on-disk cache
 // that the AWS CLI would write to. The AWS SDK uses this file automatically.
-func ssoLogin(ctx context.Context, cfg aws.Config) {
+func ssoLogin(ctx context.Context, cfg aws.Config) error {
 	// Recurse from assumed roles to the parent role until we find the configuration containing the SSO login details.
 	sharedConfig := checkSharedConfig(ctx, getSharedConfig(&cfg))
 
@@ -111,18 +113,11 @@ func ssoLogin(ctx context.Context, cfg aws.Config) {
 	// ssoRegion = sharedConfig.SSOSession.SSORegion
 
 	ssoStartURL := sharedConfig.SSOSession.SSOStartURL
-
 	ssooidcClient := ssooidc.NewFromConfig(cfg)
 
-	var clientName string
-	if sharedConfig.RoleSessionName != "" {
-		clientName = sharedConfig.RoleSessionName
-	} else {
-		osUser, err := user.Current()
-		if err != nil {
-			log.Panic(err)
-		}
-		clientName = fmt.Sprintf("%s-%s-%s", osUser, sharedConfig.Profile, sharedConfig.SSORoleName)
+	clientName, err := ssoGetClientName(sharedConfig)
+	if err != nil {
+		return fmt.Errorf("%w: %w", errGetClientName, err)
 	}
 
 	registerClient, err := ssooidcClient.RegisterClient(ctx, &ssooidc.RegisterClientInput{
@@ -131,7 +126,7 @@ func ssoLogin(ctx context.Context, cfg aws.Config) {
 		Scopes:     []string{"sso-portal:*"},
 	})
 	if err != nil {
-		log.Panic(err)
+		return fmt.Errorf("%w: %w", errRegisterClient, err)
 	}
 
 	deviceAuth, err := ssooidcClient.StartDeviceAuthorization(ctx, &ssooidc.StartDeviceAuthorizationInput{
@@ -140,45 +135,19 @@ func ssoLogin(ctx context.Context, cfg aws.Config) {
 		StartUrl:     aws.String(ssoStartURL),
 	})
 	if err != nil {
-		log.Panic(err)
+		return fmt.Errorf("%w: %w", errStartDeviceAuth, err)
 	}
 
 	authURL := aws.ToString(deviceAuth.VerificationUriComplete)
 	fmt.Fprintf(os.Stderr, "If your browser doesn't open, then open the following URL:\n%s\n\n", authURL)
-	err = browser.OpenURL(authURL)
-	if err != nil {
-		log.Panic(err)
+	if err := browser.OpenURL(authURL); err != nil {
+		return fmt.Errorf("%w: %w", errOpenBrowser, err)
 	}
 
 	// Check every 2 seconds up to 1 minute for the browser login to be completed.
-	var createTokenErr error
-	timeout := time.Minute
-	sleepTime := 2 * time.Second
-	startTime := time.Now()
-	timeDelta := time.Since(startTime)
-	token := new(ssooidc.CreateTokenOutput)
-	for timeDelta < timeout {
-		token, createTokenErr = ssooidcClient.CreateToken(
-			ctx, &ssooidc.CreateTokenInput{
-				ClientId:     registerClient.ClientId,
-				ClientSecret: registerClient.ClientSecret,
-				DeviceCode:   deviceAuth.DeviceCode,
-				GrantType:    aws.String("urn:ietf:params:oauth:grant-type:device_code"),
-				// TODO: Work out how to use the following instead of DeviceCode and the above GrantType?
-				// Is this the key to getting refreshToken in my SSO cached credentials?
-				// GrantType:    aws.String("refresh_token"),
-			},
-		)
-		if createTokenErr == nil {
-			break
-		}
-		if strings.Contains(createTokenErr.Error(), "AuthorizationPendingException") {
-			time.Sleep(sleepTime)
-			timeDelta = time.Since(startTime)
-		}
-	}
-	if createTokenErr != nil {
-		log.Panic("SSO login attempt timed out")
+	token, err := ssoTokenWait(ctx, ssooidcClient, registerClient, deviceAuth)
+	if err != nil {
+		return fmt.Errorf("%w: %w", errGetToken, err)
 	}
 
 	var refreshToken string
@@ -199,47 +168,98 @@ func ssoLogin(ctx context.Context, cfg aws.Config) {
 
 	cacheFilePath, err := getCacheFilePath(sharedConfig.SSOSessionName, ssoStartURL)
 	if err != nil {
-		log.Panic(err)
+		return fmt.Errorf("%w: %w", errGetCachePath, err)
 	}
 
-	err = writeCacheFile(cacheFilePath, &cacheData)
-	if err != nil {
-		log.Panic(err)
+	if err := writeCacheFile(cacheFilePath, &cacheData); err != nil {
+		return fmt.Errorf("%w: %w", errWriteCacheFile, err)
 	}
+
+	return nil
+}
+
+func ssoGetClientName(sharedConfig config.SharedConfig) (string, error) {
+	if sharedConfig.RoleSessionName != "" {
+		return sharedConfig.RoleSessionName, nil
+	}
+
+	osUser, err := user.Current()
+	if err != nil {
+		return "", fmt.Errorf("%w: %w", errOSUserNotFound, err)
+	}
+
+	return fmt.Sprintf("%s-%s-%s", osUser, sharedConfig.Profile, sharedConfig.SSORoleName), nil
+}
+
+func ssoTokenWait(
+	ctx context.Context,
+	ssooidcClient *ssooidc.Client,
+	registerClient *ssooidc.RegisterClientOutput,
+	deviceAuth *ssooidc.StartDeviceAuthorizationOutput,
+) (*ssooidc.CreateTokenOutput, error) {
+	var createTokenErr error
+	timeout := time.Minute
+	sleepTime := 2 * time.Second
+	startTime := time.Now()
+
+	token := new(ssooidc.CreateTokenOutput)
+	for time.Since(startTime) < timeout {
+		token, createTokenErr = ssooidcClient.CreateToken(
+			ctx, &ssooidc.CreateTokenInput{
+				ClientId:     registerClient.ClientId,
+				ClientSecret: registerClient.ClientSecret,
+				DeviceCode:   deviceAuth.DeviceCode,
+				GrantType:    aws.String("urn:ietf:params:oauth:grant-type:device_code"),
+				// TODO: Work out how to use the following instead of DeviceCode and the above GrantType?
+				// Is this the key to getting refreshToken in my SSO cached credentials?
+				// GrantType:    aws.String("refresh_token"),
+			},
+		)
+		if createTokenErr == nil {
+			return token, nil
+		}
+		if strings.Contains(createTokenErr.Error(), "AuthorizationPendingException") {
+			time.Sleep(sleepTime)
+		}
+	}
+	if createTokenErr != nil {
+		return nil, errSSOTimeout
+	}
+	return token, nil
 }
 
 // checkSharedConfig checks for a valid shared config from the user's AWS Profile to see if it has valid SSO session
 // details. If not, and it references a source profile, then load that and call this function again (recurse) to
 // check that, and so on. Eventually you'll hit a valid profile, or you'll get to the top-level where there is no
 // valid SSO session details at which point it has to give up.
-func checkSharedConfig(ctx context.Context, sc config.SharedConfig) config.SharedConfig {
-	sharedConfig := sc
-	if sharedConfig.SSOSession == nil {
-		if sharedConfig.SourceProfileName == "" {
-			log.Panic("Current AWS Profile does not support AWS SSO")
-		}
-
-		// Check the source profile.
-		cfg, err := config.LoadDefaultConfig(ctx, config.WithSharedConfigProfile(sharedConfig.SourceProfileName))
-		if err != nil {
-			log.Panic(err)
-		}
-		sharedConfig = checkSharedConfig(ctx, getSharedConfig(&cfg))
+func checkSharedConfig(ctx context.Context, sharedConfig config.SharedConfig) config.SharedConfig {
+	if sharedConfig.SSOSession != nil {
+		return sharedConfig
 	}
-	return sharedConfig
+
+	if sharedConfig.SourceProfileName == "" {
+		log.Panic("Current AWS Profile does not support AWS SSO")
+	}
+
+	// Check the source profile.
+	cfg, err := config.LoadDefaultConfig(ctx, config.WithSharedConfigProfile(sharedConfig.SourceProfileName))
+	if err != nil {
+		log.Panicf("failed to load source profile %s: %v", sharedConfig.SourceProfileName, err)
+	}
+
+	return checkSharedConfig(ctx, getSharedConfig(&cfg))
 }
 
 // getSharedConfig extracts the shared config from the slice of interfaces contained in the aws.Config struct.
 func getSharedConfig(cfg *aws.Config) config.SharedConfig {
-	var sharedConfig config.SharedConfig
 	for _, cs := range cfg.ConfigSources {
 		// Use type assertion to match the interface that is of type `config.SharedConfig`.
 		if sc, ok := cs.(config.SharedConfig); ok {
-			sharedConfig = sc
+			return sc
 		}
 	}
 
-	return sharedConfig
+	return config.SharedConfig{}
 }
 
 // getCacheFilePath returns the on-disk path of the cache file containing the AWS SSO session credentials.
@@ -247,6 +267,7 @@ func getCacheFilePath(ssoSessionName, ssoStartURL string) (string, error) {
 	var cacheFilePath string
 	var err error
 
+	// Determine the cache file path based on the provided SSO session name or start URL.
 	if ssoSessionName != "" {
 		cacheFilePath, err = ssocreds.StandardCachedTokenFilepath(ssoSessionName)
 	} else {
@@ -254,7 +275,7 @@ func getCacheFilePath(ssoSessionName, ssoStartURL string) (string, error) {
 	}
 
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("%w: %w", errGetCachePath, err)
 	}
 	return cacheFilePath, nil
 }
@@ -264,17 +285,17 @@ func getCacheFilePath(ssoSessionName, ssoStartURL string) (string, error) {
 func writeCacheFile(cacheFilePath string, cacheFileData *ssoCacheData) error {
 	marshaledJSON, err := json.Marshal(cacheFileData)
 	if err != nil {
-		return err
-	}
-	dir, _ := path.Split(cacheFilePath)
-	err = os.MkdirAll(dir, 0o700)
-	if err != nil {
-		return err
+		return fmt.Errorf("%w: %w", errMarshalJSON, err)
 	}
 
-	err = os.WriteFile(cacheFilePath, marshaledJSON, 0o600)
-	if err != nil {
-		return err
+	dir, _ := path.Split(cacheFilePath)
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return fmt.Errorf("%w: %w", NewCreateDirError(dir), err)
 	}
+
+	if err := os.WriteFile(cacheFilePath, marshaledJSON, 0o600); err != nil {
+		return fmt.Errorf("%w: %w", NewWriteCacheFileError(cacheFilePath), err)
+	}
+
 	return nil
 }
