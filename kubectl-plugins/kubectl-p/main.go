@@ -246,6 +246,7 @@ func selectNamespace(clientset *kubernetes.Clientset, opts options) (string, err
 		if _, err := k8s.GetNamespace(clientset, opts.namespace); err != nil {
 			return "", fmt.Errorf("invalid namespace: %w", err)
 		}
+		return opts.namespace, nil
 	}
 
 	return k8s.Namespace(opts.kubeContext), nil
