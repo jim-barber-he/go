@@ -7,6 +7,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"regexp"
 	"strings"
 
 	"github.com/MakeNowJust/heredoc/v2"
@@ -122,6 +123,11 @@ func getDefaultRegion() string {
 // and then returns a potentially modified SSM parameter store path.
 // The results of these are based on rules used at my workplace.
 func getSSMPath(environment, path string) string {
+	// Return fully qualified paths unmodified.
+	if strings.HasPrefix(path, "/") {
+		return path
+	}
+
 	// dev parameters at my workplace are under the /helm/minikube/ SSM parameter store path.
 	if environment == "dev" {
 		environment = "minikube"
@@ -131,7 +137,7 @@ func getSSMPath(environment, path string) string {
 	// where they are converted to be lowercase, and have a path prefix added based on the environment.
 	if path == "" {
 		path = "/helm/" + environment
-	} else if !strings.HasPrefix(path, "/") {
+	} else {
 		path = fmt.Sprintf("/helm/%s/%s", environment, strings.ToLower(path))
 	}
 
@@ -147,4 +153,30 @@ func getTerminalWidth() int {
 	}
 	// Reduce it by one since words that bump to the hard right of the terminal look uncomfortable.
 	return cols - 1
+}
+
+// validateEnvironment checks that the environment name has valid syntax.
+// It uses the same rules as an AWS profile name.
+func validateEnvironment(environment string) error {
+	// Check that the environment name contains only lowercase letters, numbers, and hyphens.
+	if !regexp.MustCompile(`^[a-z0-9-]+$`).MatchString(environment) {
+		return newInvalidEnvError(environment)
+	}
+
+	// Check that the environment name doesn't contain more than one consecutive hyphen.
+	if strings.Contains(environment, "--") {
+		return newInvalidEnvError(environment)
+	}
+
+	// Check that the environment name doesn't start or end with a hyphen.
+	if strings.HasPrefix(environment, "-") || strings.HasSuffix(environment, "-") {
+		return newInvalidEnvError(environment)
+	}
+
+	// Check that the environment name isn't a 12 digit number.
+	if regexp.MustCompile(`^\d{12}$`).MatchString(environment) {
+		return newInvalidEnvError(environment)
+	}
+
+	return nil
 }

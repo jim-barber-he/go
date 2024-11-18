@@ -72,7 +72,7 @@ Delete a parameter from the SSM parameter store.
 
 ```
 Usage:
-  ssm delete [flags] ENV PARAM
+  ssm delete [flags] ENVIRONMENT PARAMEMETER
 
 Flags:
   -h, --help   help for delete
@@ -125,8 +125,8 @@ Store a parameter and its value in the AWS SSM parameter store.
 
 ```
 Usage:
-  ssm put [flags] ENV PARAM VALUE
-  ssm put [flags] ENV PARAM --file FILE
+  ssm put [flags] ENVIRONMENT PARAMETER VALUE
+  ssm put [flags] ENVIRONMENT PARAMETER --file FILE
 
 Flags:
   -f, --file string     Get the value from the file contents

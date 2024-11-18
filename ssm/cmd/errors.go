@@ -15,10 +15,18 @@ var (
 	errValueWithFile     = errors.New("VALUE should not be provided when --file is used")
 )
 
-// NewBriefAndFullError creates a new error for when the --brief and --full options are both specified.
-func NewBriefAndFullError(usage string) error {
+// newBriefAndFullError creates a new error for when the --brief and --full options are both specified.
+func newBriefAndFullError(usage string) error {
 	return &util.Error{
 		Msg:   "it does not make sense to specify both --brief and --full\n",
 		Param: usage,
+	}
+}
+
+// newInvalidEnvError creates a new error for when an invalid environment is specified.
+func newInvalidEnvError(env string) error {
+	return &util.Error{
+		Msg:   "invalid environment: ",
+		Param: env,
 	}
 }

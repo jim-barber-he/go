@@ -34,10 +34,13 @@ var putLong = heredoc.Doc(`
 var (
 	// putCmd represents the put command.
 	putCmd = &cobra.Command{
-		Use:   "put [flags] ENV PARAM VALUE\n  ssm put [flags] ENV PARAM --file FILE",
+		Use:   "put [flags] ENVIRONMENT PARAMETER VALUE\n  ssm put [flags] ENVIRONMENT PARAMETER --file FILE",
 		Short: "Store a parameter and its value in the AWS SSM parameter store",
 		Long:  putLong,
 		Args:  cobra.RangeArgs(2, 3),
+		PreRunE: func(_ *cobra.Command, args []string) error {
+			return validateEnvironment(args[0])
+		},
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return doPut(cmd.Context(), args)
 		},

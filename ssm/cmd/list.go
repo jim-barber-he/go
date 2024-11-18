@@ -43,8 +43,12 @@ var (
 		Short: "List parameters from the SSM parameter store below a supplied path",
 		Long:  listLong,
 		Args:  cobra.RangeArgs(1, 2),
-		PreRunE: func(cmd *cobra.Command, _ []string) error {
-			return validateListOptions(cmd)
+		PreRunE: func(cmd *cobra.Command, args []string) error {
+			result := validateListOptions(cmd)
+			if result != nil {
+				return result
+			}
+			return validateEnvironment(args[0])
 		},
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return doList(cmd.Context(), args)
@@ -86,7 +90,7 @@ func listCompletionHelp(args []string) ([]string, cobra.ShellCompDirective) {
 // validateListOptions validates the list command options.
 func validateListOptions(cmd *cobra.Command) error {
 	if listOpts.brief && listOpts.full {
-		return NewBriefAndFullError(cmd.UsageString())
+		return newBriefAndFullError(cmd.UsageString())
 	}
 	return nil
 }
@@ -138,7 +142,7 @@ func displayListParameters(params []aws.SSMParameter) {
 				fmt.Printf("Error: %s\n", param.Error)
 			}
 		}
-		if i < numParams {
+		if i < numParams && !listOpts.brief {
 			fmt.Println()
 		}
 	}

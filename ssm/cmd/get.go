@@ -30,6 +30,9 @@ var (
 		Short: "Retrieve a parameter from the AWS SSM parameter store",
 		Long:  getLong,
 		Args:  cobra.ExactArgs(2),
+		PreRunE: func(_ *cobra.Command, args []string) error {
+			return validateEnvironment(args[0])
+		},
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return doGet(cmd.Context(), args)
 		},
