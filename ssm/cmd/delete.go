@@ -16,10 +16,13 @@ var deleteLong = heredoc.Doc(`
 
 // deleteCmd represents the delete command.
 var deleteCmd = &cobra.Command{
-	Use:   "delete [flags] ENV PARAM",
+	Use:   "delete [flags] ENVIRONMENT PARAMETER",
 	Short: "Delete a parameter from the SSM parameter store",
 	Long:  deleteLong,
 	Args:  cobra.ExactArgs(2),
+	PreRunE: func(_ *cobra.Command, args []string) error {
+		return validateEnvironment(args[0])
+	},
 	RunE: func(cmd *cobra.Command, args []string) error {
 		return doDelete(cmd.Context(), args)
 	},
