@@ -47,7 +47,9 @@ func (t *Table[R]) Write() {
 	for _, row := range t.Rows {
 		fmt.Fprintln(tw, row.TabValues())
 	}
-	tw.Flush()
+	if err := tw.Flush(); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+	}
 }
 
 // ReflectedTabValues outputs the field values of a struct separated by tabs. Empty fields are ignored.

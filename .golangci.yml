@@ -1,0 +1,6 @@
+linters:
+  settings:
+    errcheck:
+      exclude-functions:
+        - fmt.Fprintln
+version: "2"

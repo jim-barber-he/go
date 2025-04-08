@@ -30,8 +30,8 @@ type SSMParameter struct {
 	Version          int64     `json:"version"`
 }
 
-// Print displays the SSMParameter to the screen.
-func (p *SSMParameter) Print() {
+// Print displays the SSMParameter to the screen, optionally excluding the value.
+func (p *SSMParameter) Print(hideValue bool) {
 	fmt.Printf("ARN: %s\n", p.ARN)
 	fmt.Printf("DataType: %s\n", p.DataType)
 	if p.Error != "" {
@@ -46,7 +46,9 @@ func (p *SSMParameter) Print() {
 	}
 	fmt.Printf("Name: %s\n", p.Name)
 	fmt.Printf("Type: %s\n", p.Type)
-	fmt.Printf("Value: %s\n", p.Value)
+	if !hideValue {
+		fmt.Printf("Value: %s\n", p.Value)
+	}
 	fmt.Printf("Version: %d\n", p.Version)
 }
 
