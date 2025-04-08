@@ -16,6 +16,7 @@ import (
 type listOptions struct {
 	brief       bool
 	full        bool
+	noValue     bool
 	recursive   bool
 	safeDecrypt bool
 }
@@ -67,6 +68,7 @@ func init() {
 
 	listCmd.Flags().BoolVarP(&listOpts.brief, "brief", "b", false, "Show parameter = value output")
 	listCmd.Flags().BoolVarP(&listOpts.full, "full", "f", false, "Show additional details for each parameter")
+	listCmd.Flags().BoolVarP(&listOpts.noValue, "no-value", "n", false, "Do not show the parameter value")
 	listCmd.Flags().BoolVarP(
 		&listOpts.recursive, "recursive", "r", false, "Recursively list parameters below the parameter store path",
 	)
@@ -131,12 +133,18 @@ func displayListParameters(params []aws.SSMParameter) {
 	for i, param := range params {
 		switch {
 		case listOpts.brief:
-			fmt.Printf("%s = %s\n", param.Name, param.Value)
+			if listOpts.noValue {
+				fmt.Printf("%s\n", param.Name)
+			} else {
+				fmt.Printf("%s = %s\n", param.Name, param.Value)
+			}
 		case listOpts.full:
-			param.Print()
+			param.Print(listOpts.noValue)
 		default:
 			fmt.Printf("Name: %s\n", param.Name)
-			fmt.Printf("Value: %s\n", param.Value)
+			if !listOpts.noValue {
+				fmt.Printf("Value: %s\n", param.Value)
+			}
 			fmt.Printf("Type: %s\n", param.Type)
 			if param.Error != "" {
 				fmt.Printf("Error: %s\n", param.Error)

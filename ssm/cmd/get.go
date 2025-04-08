@@ -85,7 +85,7 @@ func doGet(ctx context.Context, args []string) error {
 	}
 
 	if getOpts.full {
-		p.Print()
+		p.Print(false)
 	} else {
 		fmt.Println(p.Value)
 	}

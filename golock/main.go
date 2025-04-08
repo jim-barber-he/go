@@ -169,7 +169,11 @@ func run() int {
 
 		return exitFailure
 	}
-	defer rdb.Close()
+	defer func() {
+		if err := rdb.Close(); err != nil {
+			slog.Error(err.Error())
+		}
+	}()
 
 	// Command to run and its arguments represented as a string.
 	command := strings.Join(os.Args[1:], " ")

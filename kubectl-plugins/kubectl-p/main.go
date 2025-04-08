@@ -11,10 +11,10 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"regexp"
 	"runtime"
 	"runtime/pprof"
 	"slices"
-	"strings"
 
 	"github.com/jim-barber-he/go/k8s"
 	"github.com/jim-barber-he/go/texttable"
@@ -65,10 +65,10 @@ type options struct {
 }
 
 // newNoMatchingPodsFoundError returns an error indicating that no matching pods were found.
-func newNoMatchingPodsFoundError(pod string) error {
+func newNoMatchingPodsFoundError(regularExpression string) error {
 	return &util.Error{
 		Msg:   "no matching pods found: ",
-		Param: "No pod names contained: " + pod,
+		Param: "No pod names matched the regular expression: " + regularExpression,
 	}
 }
 
@@ -82,7 +82,7 @@ func main() {
 		false,
 		"List the pods across all namespaces. Overrides --namespace / -n",
 	)
-	flag.StringVar(&opts.grep, "grep", "", "Limit output to pods with names containing this string")
+	flag.StringVar(&opts.grep, "grep", "", "Limit output to pods with names matching this regular expression")
 	flag.StringVar(&opts.kubeContext, "context", "", "The name of the kubeconfig context to use")
 	flag.StringVarP(&opts.labelSelector, "selector", "l", "", "Selector (label query) to filter on")
 	flag.StringVarP(&opts.namespace, "namespace", "n", "", "If present, the namespace scope for this CLI request")
@@ -133,7 +133,7 @@ func run(opts options) error {
 	// If the --grep option was passed, then filter out the pods that don't match.
 	if opts.grep != "" {
 		filteredPods := slices.DeleteFunc(pods.Items, func(pod v1.Pod) bool {
-			return !strings.Contains(pod.Name, opts.grep)
+			return !regexp.MustCompile(opts.grep).MatchString(pod.Name)
 		})
 		if len(filteredPods) == 0 {
 			return newNoMatchingPodsFoundError(opts.grep)
