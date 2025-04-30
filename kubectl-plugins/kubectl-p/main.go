@@ -43,16 +43,6 @@ type tableRow struct {
 	AZ        string `title:"AZ,omitempty"`
 }
 
-// TabTitleRow implements the texttab.TableFormatter interface.
-func (tr *tableRow) TabTitleRow() string {
-	return texttable.ReflectedTitleRow(tr)
-}
-
-// TabValues implements the texttab.TableFormatter interface.
-func (tr *tableRow) TabValues() string {
-	return texttable.ReflectedTabValues(tr)
-}
-
 // Commandline options.
 type options struct {
 	allNamespaces bool
