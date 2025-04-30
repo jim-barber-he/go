@@ -72,7 +72,7 @@ const (
 	exitTimeout int = 202 // Failure. Lock timed out.
 )
 
-func NewRedisPingError(response string) error {
+func newRedisPingError(response string) error {
 	return &util.Error{
 		Msg:   "could not ping Redis: ",
 		Param: response,
@@ -130,7 +130,7 @@ func redisConnect(ctx context.Context, connOpts *redis.Options) (*redis.Client, 
 	case err != nil:
 		return nil, fmt.Errorf("could not connect to Redis: %w", err)
 	case response != "PONG":
-		return nil, NewRedisPingError(response)
+		return nil, newRedisPingError(response)
 	}
 
 	return rdb, nil

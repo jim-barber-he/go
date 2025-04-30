@@ -25,7 +25,7 @@ var (
 	errGettingPods      = errors.New("error getting pods")
 )
 
-func NewContextNotFoundError(context string) error {
+func newContextNotFoundError(context string) error {
 	return &util.Error{
 		Msg:   "context ",
 		Param: context + " not found in kubeconfig",
@@ -154,7 +154,7 @@ func Namespace(kubeContext string) string {
 
 	context, exists := config.Contexts[kubeContext]
 	if !exists {
-		panic(NewContextNotFoundError(kubeContext))
+		panic(newContextNotFoundError(kubeContext))
 	}
 
 	ns := context.Namespace

@@ -1,51 +1,13 @@
 package texttable
 
 import (
-	"fmt"
+	"bytes"
 	"testing"
 )
 
 type Row struct {
 	Name  string `title:"NAME"`
 	Value string `title:"VALUE"`
-}
-
-// Implement the texttab.TableFormatter interface.
-func (tr *Row) TabTitleRow() string {
-	return ReflectedTitleRow(tr)
-}
-
-// Implement the texttab.TableFormatter interface.
-func (tr *Row) TabValues() string {
-	return ReflectedTabValues(tr)
-}
-
-func TestReflectedTitleRow(t *testing.T) {
-	t.Parallel()
-
-	t.Run("ReflectedTitleRow", func(t *testing.T) {
-		t.Parallel()
-
-		row := &Row{}
-		expected := "NAME\tVALUE"
-		if row.TabTitleRow() != expected {
-			t.Errorf("TabTitleRow() failed, expected %s, got %s", expected, row.TabTitleRow())
-		}
-	})
-}
-
-func TestReflectedTabValues(t *testing.T) {
-	t.Parallel()
-
-	t.Run("ReflectedTabValues", func(t *testing.T) {
-		t.Parallel()
-
-		row := &Row{Name: "a", Value: "b"}
-		expected := "a\tb"
-		if row.TabValues() != expected {
-			t.Errorf("TabValues() failed, expected %s, got %s", expected, row.TabValues())
-		}
-	})
 }
 
 func TestAppend(t *testing.T) {
@@ -67,11 +29,35 @@ func TestAppend(t *testing.T) {
 			t.Errorf("Append() failed, expected %d, got %d", expectedLen, len(tbl.Rows))
 		}
 
-		table := fmt.Sprintln(tbl.Rows[0].TabTitleRow())
-		for _, row := range tbl.Rows {
-			table += fmt.Sprintln(row.TabValues())
+		var buf bytes.Buffer
+		tbl.Write(&buf)
+		table := buf.String()
+
+		expected := "NAME  VALUE\na     a\nb     b\nc     c\n"
+		if table != expected {
+			t.Errorf("Append() failed, expected %s, got %s", expected, table)
 		}
-		expected := "NAME\tVALUE\na\ta\nb\tb\nc\tc\n"
+	})
+}
+
+func TestWrite(t *testing.T) {
+	t.Parallel()
+
+	t.Run("Write", func(t *testing.T) {
+		t.Parallel()
+
+		tbl := Table[*Row]{
+			Rows: []*Row{
+				{Name: "a", Value: "a"},
+				{Name: "b", Value: "b"},
+			},
+		}
+
+		var buf bytes.Buffer
+		tbl.Write(&buf)
+		table := buf.String()
+
+		expected := "NAME  VALUE\na     a\nb     b\n"
 		if table != expected {
 			t.Errorf("Append() failed, expected %s, got %s", expected, table)
 		}

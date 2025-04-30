@@ -56,16 +56,6 @@ type tableRow struct {
 	InstanceGroup string `title:"INSTANCE-GROUP,omitempty"`
 }
 
-// TabTitleRow implements the texttab.TableFormatter interface.
-func (tr *tableRow) TabTitleRow() string {
-	return texttable.ReflectedTitleRow(tr)
-}
-
-// TabValues implements the texttab.TableFormatter interface.
-func (tr *tableRow) TabValues() string {
-	return texttable.ReflectedTabValues(tr)
-}
-
 func main() {
 	kubeContext := flag.String("context", "", "The name of the kubeconfig context to use")
 	flag.Parse()
