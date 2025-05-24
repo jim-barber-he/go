@@ -54,10 +54,14 @@ type tableRow struct {
 	InstanceID    string `title:"INSTANCE-ID,omitempty"`
 	IP            string `title:"IP-ADDRESS,omitempty"`
 	InstanceGroup string `title:"INSTANCE-GROUP,omitempty"`
+	KernelVersion string `title:"KERNEL-VERSION,omitempty"`
+	OSImage       string `title:"OS-IMAGE,omitempty"`
+	Architecture  string `title:"ARCH,omitempty"`
 }
 
 func main() {
 	kubeContext := flag.String("context", "", "The name of the kubeconfig context to use")
+	wide := flag.BoolP("wide", "w", false, "Add KernelVersion, OSImage, and Architecture columns")
 	flag.Parse()
 
 	clientset := k8s.Client(*kubeContext)
@@ -74,7 +78,7 @@ func main() {
 	warnings := make(map[string][]string)
 
 	for _, node := range nodes.Items {
-		row := createTableRow(&node)
+		row := createTableRow(&node, *wide)
 
 		// Keep track of any warning messages for the node and a status to reflect if there are problems.
 		status, messages := getNodeStatus(node.Status.Conditions)
@@ -105,7 +109,7 @@ func main() {
 }
 
 // createTableRow creates a tableRow struct from a v1.Node struct.
-func createTableRow(node *v1.Node) tableRow {
+func createTableRow(node *v1.Node, wide bool) tableRow {
 	var row tableRow
 
 	// Just keep the hostname and strip off any domain name.
@@ -113,7 +117,14 @@ func createTableRow(node *v1.Node) tableRow {
 
 	row.Age = util.FormatAge(node.CreationTimestamp.Time)
 	row.Version = node.Status.NodeInfo.KubeletVersion
-	row.Runtime = util.LastSplitItem(node.Status.NodeInfo.ContainerRuntimeVersion, "/")
+	if wide {
+		row.Runtime = node.Status.NodeInfo.ContainerRuntimeVersion
+		row.KernelVersion = node.Status.NodeInfo.KernelVersion
+		row.OSImage = node.Status.NodeInfo.OSImage
+		row.Architecture = node.Status.NodeInfo.Architecture
+	} else {
+		row.Runtime = util.LastSplitItem(node.Status.NodeInfo.ContainerRuntimeVersion, "/")
+	}
 
 	// Additional columns for AWS EC2 instances are from this point on.
 
