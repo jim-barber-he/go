@@ -88,7 +88,7 @@ Retrieve a parameter from the AWS SSM parameter store.
 
 ```
 Usage:
-  ssm get [flags] ENVIRONMENT PARAMETER
+  ssm get [flags] ENVIRONMENT PARAMETER[:VERSION_NUMBER]
 
 Flags:
   -f, --full   Show all details for the parameter
@@ -111,6 +111,7 @@ Flags:
   -b, --brief          Show parameter = value output
   -f, --full           Show additional details for each parameter
   -h, --help           help for list
+  -n, --no-value       Do not show the parameter value
   -r, --recursive      Recursively list parameters below the parameter store path
   -s, --safe-decrypt   Slower decrypt that can handle errors
 

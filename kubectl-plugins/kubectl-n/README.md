@@ -15,7 +15,11 @@ It also sorts the nodes by their instance group name; then by the AZ; and finall
 ## Usage
 
 ```shell
-kubectl n [ --context CONTEXT ]
+kubectl n --help
+```
+```
+      --context string   The name of the kubeconfig context to use
+  -w, --wide             Add KernelVersion, OSImage, and Architecture columns
 ```
 
 ## Comparison to `kubectl get nodes`
