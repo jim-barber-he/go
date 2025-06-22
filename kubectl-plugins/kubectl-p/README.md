@@ -16,8 +16,8 @@ $ kubectl p --help
 ```
 ```
   -A, --all-namespaces       List the pods across all namespaces. Overrides --namespace / -n
-      --grep string          Limit output to pods with names containing this string
       --context string       The name of the kubeconfig context to use
+      --grep string          Limit output to pods with names matching this regular expression
   -n, --namespace string     If present, the namespace scope for this CLI request
       --profile-cpu string   Produce pprof cpu profiling output in supplied file
       --profile-mem string   Produce pprof memory profiling output in supplied file

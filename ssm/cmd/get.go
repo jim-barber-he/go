@@ -21,12 +21,14 @@ var getLong = heredoc.Doc(`
 
 	By default it will retrieve just the parameter's value.
 	Passing the --full flag will show all sorts of details about the parameter including its value.
+
+	You can also add a :$VERSION_NUMBER suffix to the parameter name to retrieve a specific version of a parameter.
 `)
 
 var (
 	// getCmd represents the get command.
 	getCmd = &cobra.Command{
-		Use:   "get [flags] ENVIRONMENT PARAMETER",
+		Use:   "get [flags] ENVIRONMENT PARAMETER[:VERSION_NUMBER]",
 		Short: "Retrieve a parameter from the AWS SSM parameter store",
 		Long:  getLong,
 		Args:  cobra.ExactArgs(2),
@@ -58,7 +60,9 @@ func getCompletionHelp(args []string) ([]string, cobra.ShellCompDirective) {
 	case len(args) == 0:
 		completionHelp = cobra.AppendActiveHelp(completionHelp, "dev, test*, or prod*")
 	case len(args) == 1:
-		completionHelp = cobra.AppendActiveHelp(completionHelp, "The path of the SSM parameter")
+		completionHelp = cobra.AppendActiveHelp(
+			completionHelp, "The path of the SSM parameter, optionally followed by a colon and version number",
+		)
 	default:
 		completionHelp = cobra.AppendActiveHelp(completionHelp, "No more arguments")
 	}
