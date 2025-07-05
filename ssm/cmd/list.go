@@ -45,9 +45,9 @@ var (
 		Long:  listLong,
 		Args:  cobra.RangeArgs(1, 2),
 		PreRunE: func(cmd *cobra.Command, args []string) error {
-			result := validateListOptions(cmd)
-			if result != nil {
-				return result
+			err := validateListOptions(cmd)
+			if err != nil {
+				return err
 			}
 			return validateEnvironment(args[0])
 		},
@@ -78,6 +78,7 @@ func init() {
 // listCompletionHelp provides shell completion help for the delete command.
 func listCompletionHelp(args []string) ([]string, cobra.ShellCompDirective) {
 	var completionHelp []string
+
 	switch {
 	case len(args) == 0:
 		completionHelp = cobra.AppendActiveHelp(completionHelp, "dev, test*, or prod*")
@@ -86,6 +87,7 @@ func listCompletionHelp(args []string) ([]string, cobra.ShellCompDirective) {
 	default:
 		completionHelp = cobra.AppendActiveHelp(completionHelp, "No more arguments")
 	}
+
 	return completionHelp, cobra.ShellCompDirectiveNoFileComp
 }
 
@@ -94,6 +96,7 @@ func validateListOptions(cmd *cobra.Command) error {
 	if listOpts.brief && listOpts.full {
 		return newBriefAndFullError(cmd.UsageString())
 	}
+
 	return nil
 }
 
@@ -142,14 +145,18 @@ func displayListParameters(params []aws.SSMParameter) {
 			param.Print(listOpts.noValue)
 		default:
 			fmt.Printf("Name: %s\n", param.Name)
+
 			if !listOpts.noValue {
 				fmt.Printf("Value: %s\n", param.Value)
 			}
+
 			fmt.Printf("Type: %s\n", param.Type)
+
 			if param.Error != "" {
 				fmt.Printf("Error: %s\n", param.Error)
 			}
 		}
+
 		if i < numParams && !listOpts.brief {
 			fmt.Println()
 		}
@@ -161,5 +168,6 @@ func listParameters(ctx context.Context, ssmClient *ssm.Client, path string) ([]
 	if listOpts.safeDecrypt {
 		return aws.SSMListSafeDecrypt(ctx, ssmClient, path, listOpts.recursive, listOpts.full)
 	}
+
 	return aws.SSMList(ctx, ssmClient, path, listOpts.recursive, listOpts.full)
 }

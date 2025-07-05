@@ -60,29 +60,36 @@ func FormatAge(timestamp time.Time) string {
 		dateStr = fmt.Sprintf("%dw", weeks)
 		retNext = true
 	}
+
 	if days > 0 {
 		dateStr = fmt.Sprintf("%s%dd", dateStr, days)
 		if retNext {
 			return dateStr
 		}
+
 		retNext = true
 	}
+
 	if hours > 0 {
 		dateStr = fmt.Sprintf("%s%dh", dateStr, hours)
 		if retNext {
 			return dateStr
 		}
+
 		retNext = true
 	}
+
 	if minutes > 0 {
 		dateStr = fmt.Sprintf("%s%dm", dateStr, minutes)
 		if retNext {
 			return dateStr
 		}
 	}
+
 	if retNext && seconds == 0 {
 		return dateStr
 	}
+
 	return fmt.Sprintf("%s%ds", dateStr, seconds)
 }
 
@@ -92,6 +99,7 @@ func GetEnv(envVar, defaultValue string) string {
 	if val, exists := os.LookupEnv(envVar); exists {
 		return val
 	}
+
 	return defaultValue
 }
 
@@ -103,6 +111,7 @@ func GetEnvBool(envVar string, defaultValue bool) bool {
 			return ret
 		}
 	}
+
 	return defaultValue
 }
 
@@ -114,6 +123,7 @@ func GetEnvInt(envVar string, defaultValue int) int {
 			return ret
 		}
 	}
+
 	return defaultValue
 }
 
@@ -123,6 +133,7 @@ func LastSplitItem(str, splitChar string) string {
 	if len(result) > 0 {
 		return result[len(result)-1]
 	}
+
 	return ""
 }
 
@@ -133,6 +144,7 @@ func RunWithTimeout(timeout int, command string, args ...string) (int, error) {
 	ctx := context.Background()
 	if timeout > 0 {
 		var cancel context.CancelFunc
+
 		ctx, cancel = context.WithTimeout(ctx, time.Duration(timeout)*time.Second)
 		defer cancel()
 	}
@@ -147,13 +159,16 @@ func RunWithTimeout(timeout int, command string, args ...string) (int, error) {
 		if err := syscall.Kill(-process.Process.Pid, syscall.SIGKILL); err != nil {
 			log.Println("Failed to kill process:", err)
 		}
+
 		return ExitCodeProcessKilled, errCommandTimedOut
 	}
+
 	if err != nil {
 		var exitError *exec.ExitError
 		if errors.As(err, &exitError) {
 			return exitError.ExitCode(), fmt.Errorf("process exited with error: %w", exitError)
 		}
+
 		return 1, fmt.Errorf("process run error: %w", err)
 	}
 
@@ -166,13 +181,16 @@ func RunWithTimeout(timeout int, command string, args ...string) (int, error) {
 func TerminalSize() (int, int, error) {
 	fds := []int{int(os.Stdout.Fd()), int(os.Stderr.Fd()), int(os.Stdin.Fd())}
 	errs := make([]error, len(fds))
+
 	for i, fd := range fds {
 		cols, rows, err := term.GetSize(fd)
 		if err == nil {
 			return cols, rows, nil
 		}
+
 		errs[i] = fmt.Errorf("fd %d: %w", fd, err)
 	}
+
 	return 0, 0, fmt.Errorf("%w: %v", errTerminalSize, errs)
 }
 
@@ -186,6 +204,7 @@ func TimeTaken(start time.Time, name string) {
 // The line position of where the string is to be written is passed in since it affects the tabstop width at that point.
 func lineVisualWidth(linePos int, str string) int {
 	width := linePos
+
 	for _, r := range str {
 		if r == '\t' {
 			width += tabStopWidth - (width % tabStopWidth)
@@ -193,6 +212,7 @@ func lineVisualWidth(linePos int, str string) int {
 			width++
 		}
 	}
+
 	return width
 }
 
@@ -207,6 +227,7 @@ func WrapLine(str string, width int) string {
 
 	pos := 0
 	prevWord := ""
+
 	for _, word := range strings.Split(str, " ") {
 		wordLength := len(word)
 
@@ -221,12 +242,14 @@ func WrapLine(str string, width int) string {
 		if pos > 0 && lineVisualWidth(pos+1, word) > width {
 			wrappedLine.WriteString(currentLine.String() + "\n")
 			currentLine.Reset()
+
 			pos = 0
 		}
 
 		// Pad the new word with a leading space unless it is a space itself, or the previous word was a space.
 		if pos > 0 && prevWord != " " && word != " " {
 			currentLine.WriteString(" ")
+
 			pos++
 		}
 
@@ -235,6 +258,7 @@ func WrapLine(str string, width int) string {
 		if strings.ContainsRune(word, '\t') {
 			for _, r := range word {
 				currentLine.WriteRune(r)
+
 				if r == '\t' {
 					pos += tabStopWidth - (pos % tabStopWidth)
 				} else {
@@ -243,8 +267,10 @@ func WrapLine(str string, width int) string {
 			}
 		} else {
 			currentLine.WriteString(word)
+
 			pos += wordLength
 		}
+
 		prevWord = word
 	}
 
@@ -268,14 +294,18 @@ func WrapTextToWidth(width int, str string) string {
 	str = strings.TrimRight(str, string('\n'))
 
 	// Produce an array of paragraphs joining multi-line paragraphs into a single line.
-	var paragraph strings.Builder
-	var paragraphs []string
+	var (
+		paragraph  strings.Builder
+		paragraphs []string
+	)
+
 	for _, line := range strings.Split(str, "\n") {
 		if line != "" {
 			// Add the line just read to the existing line since it is part of the same paragraph.
 			if paragraph.Len() != 0 {
 				paragraph.WriteString(" ")
 			}
+
 			paragraph.WriteString(line)
 		} else {
 			// When we encounter a blank line, we have completed a paragraph.
@@ -290,6 +320,7 @@ func WrapTextToWidth(width int, str string) string {
 
 	// Format the paragraphs to the width we want.
 	var finalStr strings.Builder
+
 	lastParagraph := len(paragraphs) - 1
 	for i, line := range paragraphs {
 		finalStr.WriteString(WrapLine(line, width) + "\n")
@@ -298,5 +329,6 @@ func WrapTextToWidth(width int, str string) string {
 			finalStr.WriteString("\n")
 		}
 	}
+
 	return finalStr.String()
 }

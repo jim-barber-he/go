@@ -70,11 +70,13 @@ func main() {
 	if err != nil {
 		log.Fatalf("Error listing nodes: %v", err)
 	}
+
 	if len(nodes.Items) == 0 {
 		log.Fatal("No nodes found")
 	}
 
 	var tbl texttable.Table[*tableRow]
+
 	warnings := make(map[string][]string)
 
 	for _, node := range nodes.Items {
@@ -83,10 +85,13 @@ func main() {
 		// Keep track of any warning messages for the node and a status to reflect if there are problems.
 		status, messages := getNodeStatus(node.Status.Conditions)
 		warnings[node.Name] = messages
+
 		if node.Spec.Unschedulable {
 			status += " *"
+
 			warnings[node.Name] = append(warnings[node.Name], "Scheduling Disabled")
 		}
+
 		row.Ok = status
 
 		tbl.Append(&row)
@@ -117,6 +122,7 @@ func createTableRow(node *v1.Node, wide bool) tableRow {
 
 	row.Age = util.FormatAge(node.CreationTimestamp.Time)
 	row.Version = node.Status.NodeInfo.KubeletVersion
+
 	if wide {
 		row.Runtime = node.Status.NodeInfo.ContainerRuntimeVersion
 		row.KernelVersion = node.Status.NodeInfo.KernelVersion
@@ -169,8 +175,10 @@ func getNodeStatus(conditions []v1.NodeCondition) (string, []string) {
 				"Warning, we haven't covered all conditions - Please add %s to goodStatuses",
 				condition.Type,
 			)
+
 			continue
 		}
+
 		if condition.Status != expectedStatus {
 			messages = append(messages, fmt.Sprintf(
 				"Node condition %s is now: %s, message: \"%s\"",
@@ -191,6 +199,7 @@ func printWarnings(warnings map[string][]string) {
 	for nodeName, messages := range warnings {
 		if len(messages) > 0 {
 			fmt.Println()
+
 			for _, message := range messages {
 				fmt.Printf("%s: %s\n", nodeName, message)
 			}

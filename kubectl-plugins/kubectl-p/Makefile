@@ -20,7 +20,7 @@ lint:
 	golangci-lint run
 
 lintall:
-	golangci-lint run --default all || true
+	golangci-lint run --default all --disable wsl || true
 
 run: build
 	./${BINARY_NAME}-${ARCH}

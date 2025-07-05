@@ -100,6 +100,7 @@ func run(opts options) error {
 				log.Println(err)
 			}
 		}(fp)
+
 		if err := pprof.StartCPUProfile(fp); err != nil {
 			return fmt.Errorf("failed to start CPU profile: %w", err)
 		}
@@ -128,6 +129,7 @@ func run(opts options) error {
 		if len(filteredPods) == 0 {
 			return newNoMatchingPodsFoundError(opts.grep)
 		}
+
 		pods.Items = filteredPods
 	}
 
@@ -147,6 +149,7 @@ func run(opts options) error {
 		}(fp)
 		// Get up-to-date statistics.
 		runtime.GC()
+
 		if err := pprof.WriteHeapProfile(fp); err != nil {
 			return fmt.Errorf("failed to write memory profile: %w", err)
 		}
@@ -158,6 +161,7 @@ func run(opts options) error {
 // buildAndDisplayTable builds the table from the pods (with some node details for the pod) and displays it.
 func buildAndDisplayTable(pods *v1.PodList, nodes map[string]*v1.Node, allNamespaces bool) {
 	var tbl texttable.Table[*tableRow]
+
 	for i := range pods.Items {
 		row := createTableRow(&pods.Items[i], nodes, allNamespaces)
 		tbl.Append(&row)
@@ -186,15 +190,18 @@ func createTableRow(pod *v1.Pod, nodes map[string]*v1.Node, allNamespaces bool) 
 	if allNamespaces {
 		row.Namespace = pod.Namespace
 	}
+
 	row.Name = pod.Name
 	row.Ready = fmt.Sprintf("%d/%d", readyContainers, totalContainers)
 	row.Status = status
 	row.Restarts = restarts
 	row.Age = util.FormatAge(pod.CreationTimestamp.Time)
 	row.IP = pod.Status.PodIP
+
 	if row.IP == "" {
 		row.IP = "?"
 	}
+
 	node := pod.Spec.NodeName
 	if node != "" {
 		row.Node = node
@@ -216,27 +223,34 @@ func fetchNodesAndPods(
 	g := new(errgroup.Group)
 
 	nodes := make(map[string]*v1.Node)
+
 	g.Go(func() error {
 		nodeList, err := k8s.ListNodes(clientset)
 		if err != nil {
 			return fmt.Errorf("failed to list nodes: %w", err)
 		}
+
 		for i, node := range nodeList.Items {
 			nodes[node.Name] = &nodeList.Items[i]
 		}
+
 		return nil
 	})
 
 	pods := &v1.PodList{}
+
 	g.Go(func() error {
 		listPods, err := k8s.ListPods(clientset, namespace, labelSelector)
 		if err != nil {
 			return fmt.Errorf("failed to list pods: %w", err)
 		}
+
 		if len(listPods.Items) == 0 {
 			return errNoPodsFound
 		}
+
 		*pods = *listPods
+
 		return nil
 	})
 
@@ -253,11 +267,13 @@ func selectNamespace(clientset *kubernetes.Clientset, opts options) (string, err
 	if opts.allNamespaces {
 		return "", nil
 	}
+
 	if opts.namespace != "" {
 		// Verify that the supplied namespace is valid.
 		if _, err := k8s.GetNamespace(clientset, opts.namespace); err != nil {
 			return "", fmt.Errorf("invalid namespace: %w", err)
 		}
+
 		return opts.namespace, nil
 	}
 
