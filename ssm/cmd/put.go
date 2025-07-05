@@ -4,19 +4,26 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"slices"
 
 	"github.com/MakeNowJust/heredoc/v2"
 	"github.com/aws/aws-sdk-go-v2/service/ssm"
+	"github.com/aws/aws-sdk-go-v2/service/ssm/types"
 	"github.com/jim-barber-he/go/aws"
 	"github.com/spf13/cobra"
 )
 
 // Commandline options.
 type putOptions struct {
-	file    string
-	keyID   string
-	secure  bool
-	verbose bool
+	allowedPattern string
+	dataType       string
+	description    string
+	file           string
+	keyID          string
+	policies       string
+	secure         bool
+	tier           string
+	verbose        bool
 }
 
 var putLong = heredoc.Doc(`
@@ -39,6 +46,10 @@ var (
 		Long:  putLong,
 		Args:  cobra.RangeArgs(2, 3),
 		PreRunE: func(_ *cobra.Command, args []string) error {
+			err := validatePutOptions()
+			if err != nil {
+				return err
+			}
 			return validateEnvironment(args[0])
 		},
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -56,17 +67,27 @@ var (
 func init() {
 	rootCmd.AddCommand(putCmd)
 
+	putCmd.Flags().StringVar(
+		&putOpts.allowedPattern, "allowed-pattern", "", "A regular expression used to validate the parameter value",
+	)
+	putCmd.Flags().StringVar(&putOpts.dataType, "data-type", "", "The data type for a String parameter")
+	putCmd.Flags().StringVar(&putOpts.description, "description", "", "Information  about the parameter that you want to add")
 	putCmd.Flags().StringVarP(&putOpts.file, "file", "f", "", "Get the value from the file contents")
 	putCmd.Flags().StringVar(
 		&putOpts.keyID, "key-id", "alias/parameter_store_key", "The ID of the KMS key to encrypt SecureStrings",
 	)
+	putCmd.Flags().StringVar(
+		&putOpts.policies, "policies", "", "One or more policies to apply to a parameter in JSON array format",
+	)
 	putCmd.Flags().BoolVar(&putOpts.secure, "secure", false, "Store the value as a SecureString")
+	putCmd.Flags().StringVar(&putOpts.tier, "tier", "", "The parameter tier to use: Standard, Advanced, or Intelligent-Tiering")
 	putCmd.Flags().BoolVarP(&putOpts.verbose, "verbose", "v", false, "Show the value set for the parameter")
 }
 
 // putCompletionHelp provides shell completion help for the put command.
 func putCompletionHelp(args []string) ([]string, cobra.ShellCompDirective) {
 	var completionHelp []string
+
 	switch {
 	case len(args) == 0:
 		completionHelp = cobra.AppendActiveHelp(completionHelp, "dev, test*, or prod*")
@@ -81,7 +102,26 @@ func putCompletionHelp(args []string) ([]string, cobra.ShellCompDirective) {
 	default:
 		completionHelp = cobra.AppendActiveHelp(completionHelp, "No more arguments")
 	}
+
 	return completionHelp, cobra.ShellCompDirectiveNoFileComp
+}
+
+// validatePutOptions validates the command line options for the put command.
+func validatePutOptions() error {
+	switch putOpts.dataType {
+	case "", "text", "aws:ec2:image", "aws:ssm:integration":
+		// Valid, do nothing.
+	default:
+		return errInvalidDataType
+	}
+
+	// TODO: Validate --keyID here by checking if it exists?
+
+	if putOpts.tier != "" && !slices.Contains(types.ParameterTier("").Values(), types.ParameterTier(putOpts.tier)) {
+		return newInvalidTierError()
+	}
+
+	return nil
 }
 
 // doPut stores a parameter and its value into the SSM parameter store.
@@ -112,9 +152,11 @@ func doPut(ctx context.Context, args []string) error {
 	if err != nil {
 		return fmt.Errorf("%w: %w", errPutSSMParameter, err)
 	}
+
 	if putOpts.verbose {
 		fmt.Printf("Setting %s = %s\n", param, value)
 	}
+
 	fmt.Printf("Parameter %s updated to version %d\n", param, version)
 
 	return nil
@@ -126,12 +168,34 @@ func createPutSSMParameter(name, value string) aws.SSMParameter {
 		Name:  name,
 		Value: value,
 	}
+
+	if putOpts.allowedPattern != "" {
+		ssmParam.AllowedPattern = putOpts.allowedPattern
+	}
+
+	if putOpts.dataType != "" {
+		ssmParam.DataType = putOpts.dataType
+	}
+
+	if putOpts.description != "" {
+		ssmParam.Description = putOpts.description
+	}
+
+	if putOpts.policies != "" {
+		ssmParam.Policies = putOpts.policies
+	}
+
+	if putOpts.tier != "" {
+		ssmParam.Tier = types.ParameterTier(putOpts.tier)
+	}
+
 	if putOpts.secure {
 		ssmParam.KeyID = putOpts.keyID
 		ssmParam.Type = "SecureString"
 	} else {
 		ssmParam.Type = "String"
 	}
+
 	return ssmParam
 }
 
@@ -141,19 +205,24 @@ func getPutValue(args []string) (string, error) {
 		if len(args) > 2 {
 			return "", errValueWithFile
 		}
+
 		bytes, err := os.ReadFile(putOpts.file)
 		if err != nil {
 			return "", fmt.Errorf("%w: %w", errReadFile, err)
 		}
+
 		return string(bytes), nil
 	}
+
 	if len(args) == 2 {
 		return "", errValueRequired
 	}
+
 	return args[2], nil
 }
 
-// isPutValueUnchanged checks if the parameter is already set to the same value and type.
+// isPutValueUnchanged checks if the parameter has no changes.
+// The checks for empty strings is because if not supplied those attributes will not be changed in the SSM parameter store.
 func isPutValueUnchanged(
 	ctx context.Context, ssmClient *ssm.Client, param string, ssmParam aws.SSMParameter,
 ) (bool, error) {
@@ -161,5 +230,14 @@ func isPutValueUnchanged(
 	if err != nil {
 		return false, fmt.Errorf("%w: %w", errGetSSMParameter, err)
 	}
-	return p.Value == ssmParam.Value && p.Type == ssmParam.Type, nil
+
+	return (p.AllowedPattern == ssmParam.AllowedPattern || ssmParam.AllowedPattern == "") &&
+			(p.DataType == ssmParam.DataType || p.DataType == "text" && ssmParam.DataType == "") &&
+			(p.Description == ssmParam.Description || ssmParam.Description == "") &&
+			(p.KeyID == ssmParam.KeyID || ssmParam.KeyID == "") &&
+			(p.Policies == ssmParam.Policies || ssmParam.Policies == "") &&
+			(p.Tier == ssmParam.Tier || ssmParam.Tier == "") &&
+			p.Type == ssmParam.Type &&
+			p.Value == ssmParam.Value,
+		nil
 }

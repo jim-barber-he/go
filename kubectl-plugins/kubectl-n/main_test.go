@@ -88,10 +88,12 @@ func TestGetNodeStatus(t *testing.T) {
 	for _, tt := range tests {
 		t.Run("getNodeStatus", func(t *testing.T) {
 			t.Parallel()
+
 			status, messages := getNodeStatus(tt.conditions)
 			if status != tt.status {
 				t.Errorf("got %s, want %s", status, tt.status)
 			}
+
 			if !reflect.DeepEqual(messages, tt.messages) {
 				t.Errorf("got %v, want %v", messages, tt.messages)
 			}

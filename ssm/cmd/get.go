@@ -56,6 +56,7 @@ func init() {
 // getCompletionHelp provides shell completion help for the delete command.
 func getCompletionHelp(args []string) ([]string, cobra.ShellCompDirective) {
 	var completionHelp []string
+
 	switch {
 	case len(args) == 0:
 		completionHelp = cobra.AppendActiveHelp(completionHelp, "dev, test*, or prod*")
@@ -66,6 +67,7 @@ func getCompletionHelp(args []string) ([]string, cobra.ShellCompDirective) {
 	default:
 		completionHelp = cobra.AppendActiveHelp(completionHelp, "No more arguments")
 	}
+
 	return completionHelp, cobra.ShellCompDirectiveNoFileComp
 }
 
@@ -78,6 +80,7 @@ func doGet(ctx context.Context, args []string) error {
 	ssmClient := aws.SSMClient(cfg)
 
 	param := getSSMPath(args[0], args[1])
+
 	p, err := aws.SSMGet(ctx, ssmClient, param)
 	if err != nil {
 		var notFound *types.ParameterNotFound
@@ -85,6 +88,7 @@ func doGet(ctx context.Context, args []string) error {
 			fmt.Printf("Parameter %s is not found.", args[1])
 			return nil
 		}
+
 		return fmt.Errorf("%w: %w", errGetSSMParameter, err)
 	}
 

@@ -19,5 +19,6 @@ lint lintall vet:
 	$(MAKE) -C util $@
 
 modules:
+	go get go@latest
 	go get -u ./...
 	go mod tidy

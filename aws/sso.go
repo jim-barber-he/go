@@ -46,6 +46,7 @@ func withSharedConfigProfileAndRegion(profile, region string) config.LoadOptions
 	return func(o *config.LoadOptions) error {
 		o.Region = region
 		o.SharedConfigProfile = profile
+
 		return nil
 	}
 }
@@ -53,8 +54,10 @@ func withSharedConfigProfileAndRegion(profile, region string) config.LoadOptions
 // Login gets a session to AWS, optionally specifying an AWS Profile & Region to use via the LoginSessionDetails option.
 // If the session in the on-disk cache files are invalid, then perform the AWS SSO workflow to have the user login.
 func Login(ctx context.Context, details *LoginSessionDetails) aws.Config {
-	var cfg aws.Config
-	var err error
+	var (
+		cfg aws.Config
+		err error
+	)
 
 	switch {
 	case details.Profile != "" && details.Region != "":
@@ -68,6 +71,7 @@ func Login(ctx context.Context, details *LoginSessionDetails) aws.Config {
 	default:
 		cfg, err = config.LoadDefaultConfig(ctx)
 	}
+
 	if err != nil {
 		log.Panicf("failed to load AWS config: %v", err)
 	}
@@ -140,6 +144,7 @@ func ssoLogin(ctx context.Context, cfg aws.Config) error {
 
 	authURL := aws.ToString(deviceAuth.VerificationUriComplete)
 	fmt.Fprintf(os.Stderr, "If your browser doesn't open, then open the following URL:\n%s\n\n", authURL)
+
 	if err := browser.OpenURL(authURL); err != nil {
 		return fmt.Errorf("%w: %w", errOpenBrowser, err)
 	}
@@ -198,6 +203,7 @@ func ssoTokenWait(
 	deviceAuth *ssooidc.StartDeviceAuthorizationOutput,
 ) (*ssooidc.CreateTokenOutput, error) {
 	var createTokenErr error
+
 	timeout := time.Minute
 	sleepTime := 2 * time.Second
 	startTime := time.Now()
@@ -218,13 +224,16 @@ func ssoTokenWait(
 		if createTokenErr == nil {
 			return token, nil
 		}
+
 		if strings.Contains(createTokenErr.Error(), "AuthorizationPendingException") {
 			time.Sleep(sleepTime)
 		}
 	}
+
 	if createTokenErr != nil {
 		return nil, errSSOTimeout
 	}
+
 	return token, nil
 }
 
@@ -264,8 +273,10 @@ func getSharedConfig(cfg *aws.Config) config.SharedConfig {
 
 // getCacheFilePath returns the on-disk path of the cache file containing the AWS SSO session credentials.
 func getCacheFilePath(ssoSessionName, ssoStartURL string) (string, error) {
-	var cacheFilePath string
-	var err error
+	var (
+		cacheFilePath string
+		err           error
+	)
 
 	// Determine the cache file path based on the provided SSO session name or start URL.
 	if ssoSessionName != "" {
@@ -277,6 +288,7 @@ func getCacheFilePath(ssoSessionName, ssoStartURL string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("%w: %w", errGetCachePath, err)
 	}
+
 	return cacheFilePath, nil
 }
 

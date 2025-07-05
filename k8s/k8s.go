@@ -66,6 +66,7 @@ func GetNamespace(client kubernetes.Interface, name string) (*v1.Namespace, erro
 		err = fmt.Errorf("%w: %w", errGettingNamespace, err)
 		return nil, err
 	}
+
 	return ptr, nil
 }
 
@@ -75,6 +76,7 @@ func GetNode(client kubernetes.Interface, name string) (*v1.Node, error) {
 	if err != nil {
 		return nil, fmt.Errorf("%w: %w", errGettingNode, err)
 	}
+
 	return ptr, nil
 }
 
@@ -85,6 +87,7 @@ func hasPodReadyCondition(conditions []v1.PodCondition) bool {
 			return true
 		}
 	}
+
 	return false
 }
 
@@ -95,6 +98,7 @@ func isPodInitializedConditionTrue(status *v1.PodStatus) bool {
 			return true
 		}
 	}
+
 	return false
 }
 
@@ -119,6 +123,7 @@ func ListNodes(client kubernetes.Interface) (*v1.NodeList, error) {
 	if err != nil {
 		return nil, fmt.Errorf("%w: %w", errGettingNodes, err)
 	}
+
 	return nodes, nil
 }
 
@@ -129,10 +134,12 @@ func ListPods(client kubernetes.Interface, namespace, labelSelector string) (*v1
 	if labelSelector != "" {
 		listOptions.LabelSelector = labelSelector
 	}
+
 	pods, err := client.CoreV1().Pods(namespace).List(context.Background(), listOptions)
 	if err != nil {
 		return nil, fmt.Errorf("%w: %w", errGettingPods, err)
 	}
+
 	return pods, nil
 }
 
@@ -149,6 +156,7 @@ func Namespace(kubeContext string) string {
 		if config.CurrentContext == "" {
 			return "default"
 		}
+
 		kubeContext = config.CurrentContext
 	}
 
@@ -161,6 +169,7 @@ func Namespace(kubeContext string) string {
 	if ns == "" {
 		ns = "default"
 	}
+
 	return ns
 }
 
@@ -176,6 +185,7 @@ func PodDetails(pod *v1.Pod) (readyContainers, totalContainers int, status, rest
 	lastRestartableInitContainerRestartDate := time.Time{}
 
 	podPhase := string(pod.Status.Phase)
+
 	status = podPhase
 	if pod.Status.Reason != "" {
 		status = pod.Status.Reason
@@ -197,6 +207,7 @@ func PodDetails(pod *v1.Pod) (readyContainers, totalContainers int, status, rest
 	}
 
 	initializing := false
+
 	for i, icStatus := range pod.Status.InitContainerStatuses {
 		restartCount += int(icStatus.RestartCount)
 		if icStatus.LastTerminationState.Terminated != nil {
@@ -205,6 +216,7 @@ func PodDetails(pod *v1.Pod) (readyContainers, totalContainers int, status, rest
 				lastRestartDate = terminatedDate
 			}
 		}
+
 		if isRestartableInitContainer(initContainers[icStatus.Name]) {
 			restartableInitContainerRestarts += int(icStatus.RestartCount)
 			if icStatus.LastTerminationState.Terminated != nil {
@@ -214,6 +226,7 @@ func PodDetails(pod *v1.Pod) (readyContainers, totalContainers int, status, rest
 				}
 			}
 		}
+
 		switch {
 		case icStatus.State.Terminated != nil && icStatus.State.Terminated.ExitCode == 0:
 			continue
@@ -221,6 +234,7 @@ func PodDetails(pod *v1.Pod) (readyContainers, totalContainers int, status, rest
 			if icStatus.Ready {
 				readyContainers++
 			}
+
 			continue
 		case icStatus.State.Terminated != nil:
 			// Initialization has failed
@@ -233,6 +247,7 @@ func PodDetails(pod *v1.Pod) (readyContainers, totalContainers int, status, rest
 			} else {
 				status = "Init:" + icStatus.State.Terminated.Reason
 			}
+
 			initializing = true
 		case icStatus.State.Waiting != nil &&
 			len(icStatus.State.Waiting.Reason) > 0 &&
@@ -243,6 +258,7 @@ func PodDetails(pod *v1.Pod) (readyContainers, totalContainers int, status, rest
 			status = fmt.Sprintf("Init:%d/%d", i, len(pod.Spec.InitContainers))
 			initializing = true
 		}
+
 		break
 	}
 
@@ -250,6 +266,7 @@ func PodDetails(pod *v1.Pod) (readyContainers, totalContainers int, status, rest
 		restartCount = restartableInitContainerRestarts
 		lastRestartDate = lastRestartableInitContainerRestartDate
 		hasRunning := false
+
 		for i := len(pod.Status.ContainerStatuses) - 1; i >= 0; i-- {
 			cStatus := pod.Status.ContainerStatuses[i]
 
@@ -260,6 +277,7 @@ func PodDetails(pod *v1.Pod) (readyContainers, totalContainers int, status, rest
 					lastRestartDate = terminatedDate
 				}
 			}
+
 			switch {
 			case cStatus.State.Waiting != nil && cStatus.State.Waiting.Reason != "":
 				status = cStatus.State.Waiting.Reason

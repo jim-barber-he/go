@@ -96,6 +96,7 @@ func getRedisOptions() *redis.Options {
 	redisReconnectBackoff := time.Second * time.Duration(
 		util.GetEnvInt(envLockReconnectBackoff, defLockReconnectBackoff),
 	)
+
 	opts := &redis.Options{
 		Addr: fmt.Sprintf(
 			"%s:%d", util.GetEnv(envLockHost, defLockHost), util.GetEnvInt(envLockPort, defLockPort),
@@ -109,6 +110,7 @@ func getRedisOptions() *redis.Options {
 	if auth := os.Getenv("CRONLOCK_AUTH"); auth != "" {
 		opts.Password = auth
 	}
+
 	if tlsEnabled := util.GetEnvBool(envLockTLS, defLockTLS); tlsEnabled {
 		opts.TLSConfig = &tls.Config{
 			MinVersion:         tls.VersionTLS12,
@@ -142,15 +144,18 @@ func resetKey(ctx context.Context, rdb *redis.Client, redisKey string) int {
 	reset := util.GetEnv(envLockReset, defLockReset)
 	if reset == "yes" {
 		slog.Debug(fmt.Sprintf("Removing %s key", redisKey))
+
 		removed, err := rdb.Del(ctx, redisKey).Result()
 		if err != nil {
 			slog.Error(fmt.Sprintf("Failed to remove key %s: %v", redisKey, err))
 
 			return exitFailure
 		}
+
 		if removed == 0 || removed == 1 {
 			return exitSuccess
 		}
+
 		slog.Error("Unable to remove " + redisKey)
 
 		return exitFailure
@@ -169,6 +174,7 @@ func run() int {
 
 		return exitFailure
 	}
+
 	defer func() {
 		if err := rdb.Close(); err != nil {
 			slog.Error(err.Error())
@@ -199,6 +205,7 @@ func run() int {
 
 	// Acquire lock.
 	slog.Debug(fmt.Sprintf("Acquiring lock on %s key", redisKey))
+
 	acquired, err := rdb.SetNX(ctx, redisKey, expireAtMax, time.Duration(lockRelease)*time.Second).Result()
 	if err != nil {
 		slog.Error(err.Error())
@@ -208,15 +215,14 @@ func run() int {
 
 	if acquired {
 		slog.Debug(fmt.Sprintf("Lock %s acquired", redisKey))
-	} else {
-		// Handle edge cases.
-
+	} else { // Handle edge cases.
 		expiresAt, err := rdb.Get(ctx, redisKey).Result()
 		if err != nil {
 			slog.Error(fmt.Errorf("failed to get expiration time: %w", err).Error())
 
 			return exitFailure
 		}
+
 		expiresIn, _ := strconv.Atoi(expiresAt)
 		expiresIn -= int(time.Now().UTC().Unix())
 
@@ -246,8 +252,10 @@ func run() int {
 
 			return exitFailure
 		}
+
 		expiresIn, _ = strconv.Atoi(reacquire)
 		expiresIn -= int(time.Now().UTC().Unix())
+
 		if expiresIn > 0 {
 			slog.Debug(fmt.Sprintf(
 				"Lock %s was just now acquired by a different process (expires in %ds)",
@@ -262,8 +270,10 @@ func run() int {
 	// Run command with an optional timeout.
 	timeout := util.GetEnvInt(envLockTimeout, defLockTimeout)
 	exitCode, err := util.RunWithTimeout(timeout, os.Args[1], os.Args[2:]...)
+
 	if timeout > 0 && exitCode == util.ExitCodeProcessKilled {
 		slog.Error(fmt.Sprintf("emergency: had to kill [%s] after %ds timeout", command, timeout))
+
 		exitCode = exitTimeout
 	}
 	// Show any errors from trying to run the command that weren't from the command itself.

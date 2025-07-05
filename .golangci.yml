@@ -1,4 +1,6 @@
 linters:
+  enable:
+    - wsl_v5
   settings:
     errcheck:
       exclude-functions:

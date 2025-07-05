@@ -21,6 +21,7 @@ func TestGetNamespace(t *testing.T) {
 			Name: "test",
 		},
 	}
+
 	_, err := client.CoreV1().Namespaces().Create(context.Background(), ns, metav1.CreateOptions{})
 	if err != nil {
 		t.Fatalf("error creating namespace: %v", err)
@@ -50,6 +51,7 @@ func TestGetNode(t *testing.T) {
 			Name: "test",
 		},
 	}
+
 	_, err := client.CoreV1().Nodes().Create(context.Background(), node, metav1.CreateOptions{})
 	if err != nil {
 		t.Fatalf("error creating node: %v", err)
@@ -197,6 +199,7 @@ func TestListNodes(t *testing.T) {
 			Name: "test",
 		},
 	}
+
 	_, err := client.CoreV1().Nodes().Create(context.Background(), node, metav1.CreateOptions{})
 	if err != nil {
 		t.Fatalf("error creating node: %v", err)
@@ -212,6 +215,7 @@ func TestListNodes(t *testing.T) {
 	if len(nodes.Items) != 1 {
 		t.Fatalf("expected 1 node, got %d", len(nodes.Items))
 	}
+
 	if nodes.Items[0].Name != "test" {
 		t.Fatalf("expected node name to be 'test', got '%s'", nodes.Items[0].Name)
 	}
@@ -230,6 +234,7 @@ func TestListPods(t *testing.T) {
 			Namespace: "default",
 		},
 	}
+
 	_, err := client.CoreV1().Pods("default").Create(context.Background(), pod, metav1.CreateOptions{})
 	if err != nil {
 		t.Fatalf("error creating pod: %v", err)
@@ -245,6 +250,7 @@ func TestListPods(t *testing.T) {
 	if len(pods.Items) != 1 {
 		t.Fatalf("expected 1 pod, got %d", len(pods.Items))
 	}
+
 	if pods.Items[0].Name != "test" {
 		t.Fatalf("expected pod name to be 'test', got '%s'", pods.Items[0].Name)
 	}

@@ -6,7 +6,7 @@ lint:
 	golangci-lint run
 
 lintall:
-	golangci-lint run --default all || true
+	golangci-lint run --default all --disable wsl || true
 
 test:
 	go test

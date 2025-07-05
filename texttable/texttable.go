@@ -44,6 +44,7 @@ func (t *Table[R]) Write(w ...io.Writer) {
 	// Create a slice to determine which fields to omit from the output.
 	// Initially any struct field with the `omitempty` tag is set to true to be omitted.
 	omit := make([]bool, numFields)
+
 	for i, sf := range fields {
 		titleArray := strings.Split(sf.Tag.Get("title"), ",")
 		if len(titleArray) > 1 && titleArray[1] == "omitempty" {
@@ -72,24 +73,30 @@ func (t *Table[R]) Write(w ...io.Writer) {
 
 	// Add the title row of the table skipping any `omitempty` columns where all its values are empty.
 	var s []string
+
 	for i, sf := range fields {
 		if omit[i] {
 			continue
 		}
+
 		s = append(s, strings.Split(sf.Tag.Get("title"), ",")[0])
 	}
+
 	fmt.Fprintln(tw, strings.Join(s, "\t"))
 
 	// Add the table rows skipping any `omitempty` columns where all its values are empty.
 	for _, row := range t.Rows {
 		s = nil
 		v = reflect.ValueOf(row).Elem()
+
 		for i := range numFields {
 			if omit[i] {
 				continue
 			}
+
 			s = append(s, v.Field(i).String())
 		}
+
 		fmt.Fprintln(tw, strings.Join(s, "\t"))
 	}
 
