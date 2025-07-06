@@ -226,7 +226,7 @@ func getPutValue(args []string) (string, error) {
 func isPutValueUnchanged(
 	ctx context.Context, ssmClient *ssm.Client, param string, ssmParam aws.SSMParameter,
 ) (bool, error) {
-	p, err := aws.SSMGet(ctx, ssmClient, param)
+	p, err := aws.SSMGet(ctx, ssmClient, param, true)
 	if err != nil {
 		return false, fmt.Errorf("%w: %w", errGetSSMParameter, err)
 	}
