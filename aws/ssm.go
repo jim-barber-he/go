@@ -13,6 +13,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/ssm"
 	"github.com/aws/aws-sdk-go-v2/service/ssm/types"
+	"golang.org/x/sync/errgroup"
 )
 
 // SSMParameter represents some of the fields that makes up a parameter in the AWS SSM Parameter Store.
@@ -155,54 +156,73 @@ func SSMDescribeParameter(
 	return
 }
 
-// SSMGet returns a populated SSMParameter structure populated with details of a named SSM parameter.
-func SSMGet(ctx context.Context, ssmClient *ssm.Client, name string) (SSMParameter, error) {
+// SSMGet returns a populated SSMParameter structure populated with details of a named SSM parameter from the
+// GetParameter() call, and optionally the DescribeParameter() call.
+func SSMGet(ctx context.Context, ssmClient *ssm.Client, name string, describe bool) (SSMParameter, error) {
 	var p SSMParameter
 
-	output, err := ssmClient.GetParameter(ctx, &ssm.GetParameterInput{
-		Name:           aws.String(name),
-		WithDecryption: aws.Bool(true),
-	})
-	if err != nil {
-		p.Error = fmt.Sprint(err)
+	g := new(errgroup.Group)
 
-		output, err = ssmClient.GetParameter(ctx, &ssm.GetParameterInput{Name: aws.String(name)})
+	g.Go(func() error {
+		output, err := ssmClient.GetParameter(ctx, &ssm.GetParameterInput{
+			Name:           aws.String(name),
+			WithDecryption: aws.Bool(true),
+		})
 		if err != nil {
-			return SSMParameter{}, fmt.Errorf("%w: %w", NewParameterGetError(name), err)
+			p.Error = fmt.Sprint(err)
+
+			output, err = ssmClient.GetParameter(ctx, &ssm.GetParameterInput{Name: aws.String(name)})
+			if err != nil {
+				return fmt.Errorf("%w: %w", NewParameterGetError(name), err)
+			}
+			// Clear the value since it failed to decrypt.
+			output.Parameter.Value = aws.String("")
 		}
-		// Clear the value since it failed to decrypt.
-		output.Parameter.Value = aws.String("")
+
+		p.ARN = aws.ToString(output.Parameter.ARN)
+
+		// For some reason some SSM parameters had no data type set... These seem to show in the GUI as text.
+		if output.Parameter.DataType == nil {
+			p.DataType = "text"
+		} else {
+			p.DataType = aws.ToString(output.Parameter.DataType)
+		}
+
+		p.LastModifiedDate = aws.ToTime(output.Parameter.LastModifiedDate)
+		p.Name = aws.ToString(output.Parameter.Name)
+		p.Type = string(output.Parameter.Type)
+		p.Value = aws.ToString(output.Parameter.Value)
+		p.Version = output.Parameter.Version
+
+		return nil
+	})
+
+	if describe {
+		g.Go(func() error {
+			var err error
+
+			p.AllowedPattern,
+				p.Description,
+				p.KeyID,
+				p.LastModifiedUser,
+				p.Policies,
+				p.Tier,
+				err = SSMDescribeParameter(ctx, ssmClient, name)
+
+			return err
+		})
 	}
 
-	p.ARN = aws.ToString(output.Parameter.ARN)
-	// For some reason some SSM parameters had no data type set... These seem to show in the GUI as text.
-	if output.Parameter.DataType == nil {
-		p.DataType = "text"
-	} else {
-		p.DataType = aws.ToString(output.Parameter.DataType)
+	if err := g.Wait(); err != nil {
+		return SSMParameter{}, err
 	}
-
-	p.LastModifiedDate = aws.ToTime(output.Parameter.LastModifiedDate)
-	p.Name = aws.ToString(output.Parameter.Name)
-	p.Type = string(output.Parameter.Type)
-	p.Value = aws.ToString(output.Parameter.Value)
-	p.Version = output.Parameter.Version
-
-	p.AllowedPattern,
-		p.Description,
-		p.KeyID,
-		p.LastModifiedUser,
-		p.Policies,
-		p.Tier,
-		_ = SSMDescribeParameter(ctx, ssmClient, name)
 
 	return p, nil
 }
 
 // SSMList returns a list of parameters below a path in the SSM parameter store.
 // It can optionally recurse through the paths below the supplied path.
-// If the `full` parameter (for full details) is true, it'll fetch the encryption key ID and Last modified user,
-// at the expense of performing an AWS API lookup per parameter found, so doesn't scale well.
+// If the `full` parameter (for full details) is true, it'll describe the parameter to get extra attributes.
 func SSMList(ctx context.Context, ssmClient *ssm.Client, path string, recursive, full bool) ([]SSMParameter, error) {
 	paginator := ssm.NewGetParametersByPathPaginator(ssmClient, &ssm.GetParametersByPathInput{
 		Path:           aws.String(path),
@@ -219,7 +239,7 @@ func SSMList(ctx context.Context, ssmClient *ssm.Client, path string, recursive,
 		}
 
 		for _, p := range output.Parameters {
-			param := SSMParameter{
+			params = append(params, SSMParameter{
 				ARN:              aws.ToString(p.ARN),
 				DataType:         aws.ToString(p.DataType),
 				LastModifiedDate: aws.ToTime(p.LastModifiedDate),
@@ -227,31 +247,68 @@ func SSMList(ctx context.Context, ssmClient *ssm.Client, path string, recursive,
 				Type:             string(p.Type),
 				Value:            aws.ToString(p.Value),
 				Version:          p.Version,
-			}
-
-			if full {
-				param.AllowedPattern,
-					param.Description,
-					param.KeyID,
-					param.LastModifiedUser,
-					param.Policies,
-					param.Tier,
-					_ = SSMDescribeParameter(ctx, ssmClient, param.Name)
-			}
-
-			params = append(params, param)
+			})
 		}
 	}
 
-	return params, nil
+	// If we don't want full details, return the parameters now.
+	if !full {
+		return params, nil
+	}
+
+	// Describe each parameter in parallel to get extra attributes.
+	result := make([]SSMParameter, len(params))
+
+	// Use a semaphore to limit concurrency to avoid overwhelming the SSM API.
+	ssmConcurrency := make(chan struct{}, 20)
+	g := new(errgroup.Group)
+
+	for i := range params {
+		// Acquire a semaphore
+		ssmConcurrency <- struct{}{}
+
+		// Capture the current value of the loop variable.
+		// The goroutines can't reference the loop variable directly since they run in parallel and will get its
+		// value at the time they run.
+		idx := i
+
+		g.Go(func() error {
+			// Release the semaphore upon completion
+			defer func() { <-ssmConcurrency }()
+
+			var err error
+
+			p := params[idx]
+
+			p.AllowedPattern,
+				p.Description,
+				p.KeyID,
+				p.LastModifiedUser,
+				p.Policies,
+				p.Tier,
+				err = SSMDescribeParameter(ctx, ssmClient, p.Name)
+			if err != nil {
+				return fmt.Errorf("%w: %w", NewParameterDescribeError(p.Name), err)
+			}
+
+			result[i] = p
+
+			return nil
+		})
+	}
+
+	if err := g.Wait(); err != nil {
+		return nil, err
+	}
+
+	return result, nil
 }
 
 // SSMListSafeDecrypt returns a list of parameters below a path in the SSM parameter store.
 // It can optionally recurse through the paths below the supplied path.
-// If the `full` parameter (for full details) is true, it'll fetch the encryption key ID and Last modified user,
-// at the expense of performing an AWS API lookup per parameter found, so doesn't scale well.
-// It differs from SSMList in that it retrieves parameters unencrypted then tries to decrypt them as they are
-// encountered. This allows it to handle decryption errors like when the decryption key has been deleted.
+// If the `full` parameter (for full details) is true, it'll describe the parameter to get extra attributes.
+// This function differs from SSMList in that it retrieves parameters unencrypted then tries to decrypt them
+// separately This allows it to handle decryption errors like when the decryption key has been deleted.
 func SSMListSafeDecrypt(
 	ctx context.Context, ssmClient *ssm.Client, path string, recursive, full bool,
 ) ([]SSMParameter, error) {
@@ -279,7 +336,7 @@ func SSMListSafeDecrypt(
 			}
 
 			if types.ParameterType(param.Type) == types.ParameterTypeSecureString {
-				par, err := SSMGet(ctx, ssmClient, param.Name)
+				par, err := SSMGet(ctx, ssmClient, param.Name, false)
 				if err != nil {
 					param.Error = fmt.Sprint(err)
 				} else {
@@ -290,21 +347,61 @@ func SSMListSafeDecrypt(
 				param.Value = aws.ToString(p.Value)
 			}
 
-			if full {
-				param.AllowedPattern,
-					param.Description,
-					param.KeyID,
-					param.LastModifiedUser,
-					param.Policies,
-					param.Tier,
-					_ = SSMDescribeParameter(ctx, ssmClient, param.Name)
-			}
-
 			params = append(params, param)
 		}
 	}
 
-	return params, nil
+	// If we don't want full details, return the parameters now.
+	if !full {
+		return params, nil
+	}
+
+	// Describe each parameter in parallel to get extra attributes.
+	result := make([]SSMParameter, len(params))
+
+	// Use a semaphore to limit concurrency to avoid overwhelming the SSM API.
+	ssmConcurrency := make(chan struct{}, 20)
+	g := new(errgroup.Group)
+
+	for i := range params {
+		// Acquire a semaphore
+		ssmConcurrency <- struct{}{}
+
+		// Capture the current value of the loop variable.
+		// The goroutines can't reference the loop variable directly since they run in parallel and will get its
+		// value at the time they run.
+		idx := i
+
+		g.Go(func() error {
+			// Release the semaphore upon completion
+			defer func() { <-ssmConcurrency }()
+
+			var err error
+
+			p := params[idx]
+
+			p.AllowedPattern,
+				p.Description,
+				p.KeyID,
+				p.LastModifiedUser,
+				p.Policies,
+				p.Tier,
+				err = SSMDescribeParameter(ctx, ssmClient, p.Name)
+			if err != nil {
+				return fmt.Errorf("%w: %w", NewParameterDescribeError(p.Name), err)
+			}
+
+			result[i] = p
+
+			return nil
+		})
+	}
+
+	if err := g.Wait(); err != nil {
+		return nil, err
+	}
+
+	return result, nil
 }
 
 // SSMPut creates or updates a parameter in the SSM Parameter store.

@@ -81,7 +81,7 @@ func doGet(ctx context.Context, args []string) error {
 
 	param := getSSMPath(args[0], args[1])
 
-	p, err := aws.SSMGet(ctx, ssmClient, param)
+	p, err := aws.SSMGet(ctx, ssmClient, param, getOpts.full)
 	if err != nil {
 		var notFound *types.ParameterNotFound
 		if errors.As(err, &notFound) {
