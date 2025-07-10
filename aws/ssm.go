@@ -6,6 +6,7 @@ package aws
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"strings"
 	"time"
@@ -13,6 +14,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/ssm"
 	"github.com/aws/aws-sdk-go-v2/service/ssm/types"
+	"github.com/jim-barber-he/go/util"
 	"golang.org/x/sync/errgroup"
 )
 
@@ -35,42 +37,49 @@ type SSMParameter struct {
 }
 
 // Print displays the SSMParameter to the screen, optionally excluding the value.
-func (p *SSMParameter) Print(hideValue bool) {
-	if p.AllowedPattern != "" {
-		fmt.Printf("AllowedPattern: %s\n", p.AllowedPattern)
+// The json parameter controls if the output is in JSON format or not.
+func (p *SSMParameter) Print(hideValue, json bool) {
+	if json {
+		printJSON(*p, hideValue)
+	} else {
+		printText(*p, hideValue)
+	}
+}
+
+// printJSON is a helper function to print an SSMParameter in JSON format.
+func printJSON(p SSMParameter, hideValue bool) {
+	var (
+		err      error
+		jsonData []byte
+	)
+
+	if hideValue {
+		jsonData, err = util.MarshalWithoutFields(p, "value")
+	} else {
+		jsonData, err = json.Marshal(p)
 	}
 
+	if err != nil {
+		fmt.Printf("Error converting SSMParameter copy to JSON: %v\n", err)
+		return
+	}
+
+	fmt.Println(string(jsonData))
+}
+
+// printText is a helper function to print an SSMParameter in text format.
+func printText(p SSMParameter, hideValue bool) {
+	printTextIfNotEmpty("AllowedPattern", p.AllowedPattern)
 	fmt.Printf("ARN: %s\n", p.ARN)
 	fmt.Printf("DataType: %s\n", p.DataType)
-
-	if p.Description != "" {
-		fmt.Printf("Description: %s\n", p.Description)
-	}
-
-	if p.Error != "" {
-		fmt.Printf("Error: %s\n", p.Error)
-	}
-
-	if p.KeyID != "" {
-		fmt.Printf("KeyID: %s\n", p.KeyID)
-	}
-
+	printTextIfNotEmpty("Description", p.Description)
+	printTextIfNotEmpty("Error", p.Error)
+	printTextIfNotEmpty("KeyID", p.KeyID)
 	fmt.Printf("LastModifiedDate: %s\n", p.LastModifiedDate)
-
-	if p.LastModifiedUser != "" {
-		fmt.Printf("LastModifiedUser: %s\n", p.LastModifiedUser)
-	}
-
+	printTextIfNotEmpty("LastModifiedUser", p.LastModifiedUser)
 	fmt.Printf("Name: %s\n", p.Name)
-
-	if p.Policies != "" {
-		fmt.Printf("Policies: %s\n", p.Policies)
-	}
-
-	if p.Tier != "" {
-		fmt.Printf("Tier: %s\n", p.Tier)
-	}
-
+	printTextIfNotEmpty("Policies", p.Policies)
+	printTextIfNotEmpty("Tier", string(p.Tier))
 	fmt.Printf("Type: %s\n", p.Type)
 
 	if !hideValue {
@@ -78,6 +87,13 @@ func (p *SSMParameter) Print(hideValue bool) {
 	}
 
 	fmt.Printf("Version: %d\n", p.Version)
+}
+
+// printTextIfNotEmpty is a helper function to print a field if it is not empty.
+func printTextIfNotEmpty(label, value string) {
+	if value != "" {
+		fmt.Printf("%s: %s\n", label, value)
+	}
 }
 
 // SSMClient returns the authenticated SSM client that can be passed to the various SSM* Functions.

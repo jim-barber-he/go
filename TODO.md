@@ -2,7 +2,6 @@
 
 * Have the AWS SSO flow use the same OIDC method that the AWS CLI v2 moved to.
 * Improvements for `ssm` command:
-  * Add JSON output for the `get` and `list` commands.
   * Handle getting and putting tags.
   * Implement `copy` command.
 * Improve / add tests for the AWS code once I work out how to mock AWS services.

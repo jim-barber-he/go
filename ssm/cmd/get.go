@@ -14,6 +14,7 @@ import (
 // Commandline options.
 type getOptions struct {
 	full bool
+	json bool
 }
 
 var getLong = heredoc.Doc(`
@@ -51,6 +52,7 @@ func init() {
 	rootCmd.AddCommand(getCmd)
 
 	getCmd.Flags().BoolVarP(&getOpts.full, "full", "f", false, "Show all details for the parameter")
+	getCmd.Flags().BoolVar(&getOpts.json, "json", false, "Output the parameter in JSON format")
 }
 
 // getCompletionHelp provides shell completion help for the delete command.
@@ -93,9 +95,13 @@ func doGet(ctx context.Context, args []string) error {
 	}
 
 	if getOpts.full {
-		p.Print(false)
+		p.Print(false, getOpts.json)
 	} else {
-		fmt.Println(p.Value)
+		if getOpts.json {
+			fmt.Printf("{\"value\": \"%s\"}\n", p.Value)
+		} else {
+			fmt.Println(p.Value)
+		}
 	}
 
 	return nil
