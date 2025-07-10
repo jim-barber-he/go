@@ -16,6 +16,7 @@ import (
 type listOptions struct {
 	brief       bool
 	full        bool
+	json        bool
 	noValue     bool
 	recursive   bool
 	safeDecrypt bool
@@ -28,7 +29,12 @@ var listLong = heredoc.Doc(`
 
 	If the --recursive flag is used then it will also show all parameters in the paths below the specified path.
 
+	If the --brief flag is specified, then the output will be one line per parameter of the form: 'ssm_parameter_name = value'.
+	This option cannot be used with the --full or --json flags.
+
 	If the --full flag is specified, then more details about each parameter will be shown.
+
+	If the --json flag is specified, then the output will be formatted as JSON.
 
 	If no PATH is passed at all, then for the 'dev', 'test*', and 'prod*' environments it will look in
 	'/helm/minikube/', '/helm/test*/', or '/helm/prod*/' respectively.
@@ -68,6 +74,7 @@ func init() {
 
 	listCmd.Flags().BoolVarP(&listOpts.brief, "brief", "b", false, "Show parameter = value output")
 	listCmd.Flags().BoolVarP(&listOpts.full, "full", "f", false, "Show additional details for each parameter")
+	listCmd.Flags().BoolVar(&listOpts.json, "json", false, "Display the output as JSON")
 	listCmd.Flags().BoolVarP(&listOpts.noValue, "no-value", "n", false, "Do not show the parameter value")
 	listCmd.Flags().BoolVarP(
 		&listOpts.recursive, "recursive", "r", false, "Recursively list parameters below the parameter store path",
@@ -95,6 +102,10 @@ func listCompletionHelp(args []string) ([]string, cobra.ShellCompDirective) {
 func validateListOptions(cmd *cobra.Command) error {
 	if listOpts.brief && listOpts.full {
 		return newBriefAndFullError(cmd.UsageString())
+	}
+
+	if listOpts.brief && listOpts.json {
+		return newBriefAndJsonError(cmd.UsageString())
 	}
 
 	return nil
@@ -136,30 +147,58 @@ func displayListParameters(params []aws.SSMParameter) {
 	for i, param := range params {
 		switch {
 		case listOpts.brief:
-			if listOpts.noValue {
-				fmt.Printf("%s\n", param.Name)
-			} else {
-				fmt.Printf("%s = %s\n", param.Name, param.Value)
-			}
+			displayBrief(param)
 		case listOpts.full:
-			param.Print(listOpts.noValue)
+			param.Print(listOpts.noValue, listOpts.json)
 		default:
-			fmt.Printf("Name: %s\n", param.Name)
-
-			if !listOpts.noValue {
-				fmt.Printf("Value: %s\n", param.Value)
-			}
-
-			fmt.Printf("Type: %s\n", param.Type)
-
-			if param.Error != "" {
-				fmt.Printf("Error: %s\n", param.Error)
-			}
+			displayDefault(param)
 		}
 
-		if i < numParams && !listOpts.brief {
+		if i < numParams && !listOpts.brief && !listOpts.json {
 			fmt.Println()
 		}
+	}
+}
+
+// displayBrief is a helper function to display a parameter in a brief format.
+func displayBrief(param aws.SSMParameter) {
+	if listOpts.noValue {
+		fmt.Println(param.Name)
+	} else {
+		fmt.Printf("%s = %s\n", param.Name, param.Value)
+	}
+}
+
+// displayDefault is a helper function to display a parameter in the default format.
+func displayDefault(param aws.SSMParameter) {
+	if listOpts.json {
+		displayDefaultJSON(param)
+	} else {
+		displayDefaultText(param)
+	}
+}
+
+// displayDefaultJSON is a helper function to display a parameter in default JSON format.
+func displayDefaultJSON(param aws.SSMParameter) {
+	if listOpts.noValue {
+		fmt.Printf(`{"name":"%s","type":"%s"}`+"\n", param.Name, param.Type)
+	} else {
+		fmt.Printf(`{"name":"%s","type":"%s","value":"%s"}`+"\n", param.Name, param.Type, param.Value)
+	}
+}
+
+// displayDefaultText is a helper function to display a parameter in default text format.
+func displayDefaultText(param aws.SSMParameter) {
+	fmt.Printf("Name: %s\n", param.Name)
+
+	if !listOpts.noValue {
+		fmt.Printf("Value: %s\n", param.Value)
+	}
+
+	fmt.Printf("Type: %s\n", param.Type)
+
+	if param.Error != "" {
+		fmt.Printf("Error: %s\n", param.Error)
 	}
 }
 

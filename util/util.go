@@ -5,6 +5,7 @@ package util
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log"
@@ -135,6 +136,26 @@ func LastSplitItem(str, splitChar string) string {
 	}
 
 	return ""
+}
+
+// MarshalWithoutFields marshals a struct to JSON ommitting one or more fields.
+func MarshalWithoutFields(v any, omitFields ...string) ([]byte, error) {
+	rawJSON, err := json.Marshal(v)
+	if err != nil {
+		return nil, err
+	}
+
+	var m map[string]any
+	if err := json.Unmarshal(rawJSON, &m); err != nil {
+		return nil, err
+	}
+
+	// Remove the fields we want to omit.
+	for _, field := range omitFields {
+		delete(m, field)
+	}
+
+	return json.Marshal(m)
 }
 
 // RunWithTimeout executes a command with a timeout.
