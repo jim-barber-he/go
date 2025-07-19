@@ -138,6 +138,27 @@ func LastSplitItem(str, splitChar string) string {
 	return ""
 }
 
+// MarshalWithFields marshals a struct to JSON keeping only the specified fields.
+func MarshalWithFields(v any, fields ...string) ([]byte, error) {
+	rawJSON, err := json.Marshal(v)
+	if err != nil {
+		return nil, err
+	}
+
+	var m map[string]any
+	if err := json.Unmarshal(rawJSON, &m); err != nil {
+		return nil, err
+	}
+
+	// Create a new map with only the fields we want to keep.
+	filteredMap := make(map[string]any)
+	for _, field := range fields {
+		filteredMap[field] = m[field]
+	}
+
+	return json.Marshal(filteredMap)
+}
+
 // MarshalWithoutFields marshals a struct to JSON omitting one or more fields.
 func MarshalWithoutFields(v any, omitFields ...string) ([]byte, error) {
 	rawJSON, err := json.Marshal(v)
