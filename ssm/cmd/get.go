@@ -8,6 +8,7 @@ import (
 	"github.com/MakeNowJust/heredoc/v2"
 	"github.com/aws/aws-sdk-go-v2/service/ssm/types"
 	"github.com/jim-barber-he/go/aws"
+	"github.com/jim-barber-he/go/util"
 	"github.com/spf13/cobra"
 )
 
@@ -99,7 +100,12 @@ func doGet(ctx context.Context, args []string) error {
 		par.Print(false, getOpts.json)
 	} else {
 		if getOpts.json {
-			fmt.Printf("{\"value\": \"%s\"}\n", par.Value)
+			jsonData, err := util.MarshalWithFields(par, "value")
+			if err != nil {
+				return fmt.Errorf("failed to marshal parameter value to JSON: %w", err)
+			}
+
+			fmt.Println(string(jsonData))
 		} else {
 			fmt.Println(par.Value)
 		}

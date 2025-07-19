@@ -9,6 +9,7 @@ import (
 	"github.com/MakeNowJust/heredoc/v2"
 	"github.com/aws/aws-sdk-go-v2/service/ssm"
 	"github.com/jim-barber-he/go/aws"
+	"github.com/jim-barber-he/go/util"
 	"github.com/spf13/cobra"
 )
 
@@ -182,11 +183,22 @@ func displayDefault(param aws.SSMParameter) {
 
 // displayDefaultJSON is a helper function to display a parameter in default JSON format.
 func displayDefaultJSON(param aws.SSMParameter) {
+	var (
+		err      error
+		jsonData []byte
+	)
+
 	if listOpts.noValue {
-		fmt.Printf(`{"name":"%s","type":"%s"}`+"\n", param.Name, param.Type)
+		jsonData, err = util.MarshalWithFields(param, "name", "type")
 	} else {
-		fmt.Printf(`{"name":"%s","type":"%s","value":"%s"}`+"\n", param.Name, param.Type, param.Value)
+		jsonData, err = util.MarshalWithFields(param, "name", "type", "value")
 	}
+
+	if err != nil {
+		fmt.Printf("Error: failed to marshal parameter to JSON: %v\n", err)
+	}
+
+	fmt.Println(string(jsonData))
 }
 
 // displayDefaultText is a helper function to display a parameter in default text format.
