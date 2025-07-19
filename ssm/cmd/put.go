@@ -50,6 +50,7 @@ var (
 			if err != nil {
 				return err
 			}
+
 			return validateEnvironment(args[0])
 		},
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -71,7 +72,9 @@ func init() {
 		&putOpts.allowedPattern, "allowed-pattern", "", "A regular expression used to validate the parameter value",
 	)
 	putCmd.Flags().StringVar(&putOpts.dataType, "data-type", "", "The data type for a String parameter")
-	putCmd.Flags().StringVar(&putOpts.description, "description", "", "Information  about the parameter that you want to add")
+	putCmd.Flags().StringVar(
+		&putOpts.description, "description", "", "Information  about the parameter that you want to add",
+	)
 	putCmd.Flags().StringVarP(&putOpts.file, "file", "f", "", "Get the value from the file contents")
 	putCmd.Flags().StringVar(
 		&putOpts.keyID, "key-id", "alias/parameter_store_key", "The ID of the KMS key to encrypt SecureStrings",
@@ -80,7 +83,9 @@ func init() {
 		&putOpts.policies, "policies", "", "One or more policies to apply to a parameter in JSON array format",
 	)
 	putCmd.Flags().BoolVar(&putOpts.secure, "secure", false, "Store the value as a SecureString")
-	putCmd.Flags().StringVar(&putOpts.tier, "tier", "", "The parameter tier to use: Standard, Advanced, or Intelligent-Tiering")
+	putCmd.Flags().StringVar(
+		&putOpts.tier, "tier", "", "The parameter tier to use: Standard, Advanced, or Intelligent-Tiering",
+	)
 	putCmd.Flags().BoolVarP(&putOpts.verbose, "verbose", "v", false, "Show the value set for the parameter")
 }
 
@@ -145,6 +150,7 @@ func doPut(ctx context.Context, args []string) error {
 	// Return if the parameter is already set to the same value and type.
 	if unchanged, err := isPutValueUnchanged(ctx, ssmClient, param, ssmParam); err == nil && unchanged {
 		fmt.Println("Value unchanged.")
+
 		return nil
 	}
 
@@ -222,22 +228,22 @@ func getPutValue(args []string) (string, error) {
 }
 
 // isPutValueUnchanged checks if the parameter has no changes.
-// The checks for empty strings is because if not supplied those attributes will not be changed in the SSM parameter store.
+// The empty string checks are because if not supplied, those attributes will not be changed in the SSM parameter store.
 func isPutValueUnchanged(
 	ctx context.Context, ssmClient *ssm.Client, param string, ssmParam aws.SSMParameter,
 ) (bool, error) {
-	p, err := aws.SSMGet(ctx, ssmClient, param, true)
+	par, err := aws.SSMGet(ctx, ssmClient, param, true)
 	if err != nil {
 		return false, fmt.Errorf("%w: %w", errGetSSMParameter, err)
 	}
 
-	return (p.AllowedPattern == ssmParam.AllowedPattern || ssmParam.AllowedPattern == "") &&
-			(p.DataType == ssmParam.DataType || p.DataType == "text" && ssmParam.DataType == "") &&
-			(p.Description == ssmParam.Description || ssmParam.Description == "") &&
-			(p.KeyID == ssmParam.KeyID || ssmParam.KeyID == "") &&
-			(p.Policies == ssmParam.Policies || ssmParam.Policies == "") &&
-			(p.Tier == ssmParam.Tier || ssmParam.Tier == "") &&
-			p.Type == ssmParam.Type &&
-			p.Value == ssmParam.Value,
+	return (par.AllowedPattern == ssmParam.AllowedPattern || ssmParam.AllowedPattern == "") &&
+			(par.DataType == ssmParam.DataType || par.DataType == "text" && ssmParam.DataType == "") &&
+			(par.Description == ssmParam.Description || ssmParam.Description == "") &&
+			(par.KeyID == ssmParam.KeyID || ssmParam.KeyID == "") &&
+			(par.Policies == ssmParam.Policies || ssmParam.Policies == "") &&
+			(par.Tier == ssmParam.Tier || ssmParam.Tier == "") &&
+			par.Type == ssmParam.Type &&
+			par.Value == ssmParam.Value,
 		nil
 }

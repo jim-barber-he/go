@@ -83,11 +83,12 @@ func doGet(ctx context.Context, args []string) error {
 
 	param := getSSMPath(args[0], args[1])
 
-	p, err := aws.SSMGet(ctx, ssmClient, param, getOpts.full)
+	par, err := aws.SSMGet(ctx, ssmClient, param, getOpts.full)
 	if err != nil {
 		var notFound *types.ParameterNotFound
 		if errors.As(err, &notFound) {
 			fmt.Printf("Parameter %s is not found.", args[1])
+
 			return nil
 		}
 
@@ -95,12 +96,12 @@ func doGet(ctx context.Context, args []string) error {
 	}
 
 	if getOpts.full {
-		p.Print(false, getOpts.json)
+		par.Print(false, getOpts.json)
 	} else {
 		if getOpts.json {
-			fmt.Printf("{\"value\": \"%s\"}\n", p.Value)
+			fmt.Printf("{\"value\": \"%s\"}\n", par.Value)
 		} else {
-			fmt.Println(p.Value)
+			fmt.Println(par.Value)
 		}
 	}
 

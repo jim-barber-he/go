@@ -29,7 +29,8 @@ var listLong = heredoc.Doc(`
 
 	If the --recursive flag is used then it will also show all parameters in the paths below the specified path.
 
-	If the --brief flag is specified, then the output will be one line per parameter of the form: 'ssm_parameter_name = value'.
+	If the --brief flag is specified, then the output will be one line per parameter of the form:
+	'ssm_parameter_name = value'.
 	This option cannot be used with the --full or --json flags.
 
 	If the --full flag is specified, then more details about each parameter will be shown.
@@ -55,6 +56,7 @@ var (
 			if err != nil {
 				return err
 			}
+
 			return validateEnvironment(args[0])
 		},
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -105,7 +107,7 @@ func validateListOptions(cmd *cobra.Command) error {
 	}
 
 	if listOpts.brief && listOpts.json {
-		return newBriefAndJsonError(cmd.UsageString())
+		return newBriefAndJSONError(cmd.UsageString())
 	}
 
 	return nil
@@ -144,7 +146,7 @@ func displayListParameters(params []aws.SSMParameter) {
 	})
 
 	numParams := len(params) - 1
-	for i, param := range params {
+	for idx, param := range params {
 		switch {
 		case listOpts.brief:
 			displayBrief(param)
@@ -154,7 +156,7 @@ func displayListParameters(params []aws.SSMParameter) {
 			displayDefault(param)
 		}
 
-		if i < numParams && !listOpts.brief && !listOpts.json {
+		if idx < numParams && !listOpts.brief && !listOpts.json {
 			fmt.Println()
 		}
 	}

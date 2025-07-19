@@ -65,11 +65,9 @@ func NewWriteCacheFileError(file string) error {
 
 var (
 	errGetCachePath       = errors.New("failed to get cache file path")
-	errGetClientName      = errors.New("failed to get client name")
 	errGetToken           = errors.New("failed to get token")
 	errMarshalJSON        = errors.New("failed to marshal cache data to JSON")
 	errOpenBrowser        = errors.New("failed to open browser for authentication")
-	errOSUserNotFound     = errors.New("failed to find OS user")
 	errParameterGetByPath = errors.New("failed to get parameters by path")
 	errRegisterClient     = errors.New("failed to register client")
 	errSSOTimeout         = errors.New("SSO login attempt timed out")

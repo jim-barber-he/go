@@ -6,11 +6,18 @@ package aws
 
 import (
 	"context"
+	"crypto/rand"
+	"crypto/sha256"
+	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
+	"math/big"
+	"net"
+	"net/http"
+	"net/url"
 	"os"
-	"os/user"
 	"path"
 	"strings"
 	"time"
@@ -22,6 +29,8 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/sts"
 	"github.com/pkg/browser"
 )
+
+const clientName = "github.com/jim-barber-he/go/aws/sso"
 
 // LoginSessionDetails is for passing AWS Profile and Region options to the Login function.
 type LoginSessionDetails struct {
@@ -51,9 +60,8 @@ func withSharedConfigProfileAndRegion(profile, region string) config.LoadOptions
 	}
 }
 
-// Login gets a session to AWS, optionally specifying an AWS Profile & Region to use via the LoginSessionDetails option.
-// If the session in the on-disk cache files are invalid, then perform the AWS SSO workflow to have the user login.
-func Login(ctx context.Context, details *LoginSessionDetails) aws.Config {
+// loadConfig is a helper function to load the AWS configuration with the provided details.
+func loadConfig(ctx context.Context, details *LoginSessionDetails) aws.Config {
 	var (
 		cfg aws.Config
 		err error
@@ -76,18 +84,52 @@ func Login(ctx context.Context, details *LoginSessionDetails) aws.Config {
 		log.Panicf("failed to load AWS config: %v", err)
 	}
 
+	return cfg
+}
+
+// Login gets a session to AWS, optionally specifying an AWS Profile & Region to use via the LoginSessionDetails option.
+// If the session in the on-disk cache files are invalid, then perform the AWS SSO workflow to have the user login.
+func Login(ctx context.Context, details *LoginSessionDetails) aws.Config {
+	// Load the AWS configuration based on the provided details.
+	cfg := loadConfig(ctx, details)
+
 	// Check if the AWS SSO session is valid.
-	if _, err = sts.NewFromConfig(cfg).GetCallerIdentity(ctx, &sts.GetCallerIdentityInput{}); err == nil {
+	if _, err := sts.NewFromConfig(cfg).GetCallerIdentity(ctx, &sts.GetCallerIdentityInput{}); err == nil {
 		// Session is valid.
 		return cfg
 	}
 
+	// Recurse from assumed roles to the parent role until we find the configuration containing the SSO login details.
+	sharedConfig := checkSharedConfig(ctx, getSharedConfig(&cfg))
+
+	// Try to refresh token before full login.
+	if cachePath, err := getCacheFilePath(sharedConfig.SSOSessionName, sharedConfig.SSOSession.SSOStartURL); err == nil {
+		if cache, err := readCacheFile(cachePath); err == nil {
+			if time.Now().UTC().After(cache.ExpiresAt) {
+				// Expired, try refresh
+				if cache.RefreshToken != "" {
+					refreshed, err := refreshSSOToken(ctx, cache, cfg)
+					if err == nil {
+						_ = writeCacheFile(cachePath, refreshed)
+
+						return cfg
+					}
+
+					log.Printf("Token refresh failed, falling back to login: %v", err)
+				}
+			} else {
+				// Still valid — skip login
+				return cfg
+			}
+		}
+	}
+
 	// Session is not valid, so need to perform an AWS SSO login.
-	if err := ssoLogin(ctx, cfg); err != nil {
+	if err := ssoLogin(ctx, cfg, sharedConfig); err != nil {
 		log.Panicf("failed to perform AWS SSO login: %v", err)
 	}
 
-	/* Hmmm I don't have to fetch cfg again. It seems independent of the SSO sign-in...
+	/* I don't have to fetch cfg again. It seems independent of the SSO sign-in...
 	   I can just return the one I got even if AWS SSO login hasn't been performed yet after an aws sso logout.
 	   I've found out that all I need is to write that updated cache file above.
 	   If I don't write the cache file then later calls result in errors like:
@@ -104,25 +146,223 @@ func Login(ctx context.Context, details *LoginSessionDetails) aws.Config {
 	return cfg
 }
 
+// refreshSSOToken attempts to refresh the AWS SSO token using the refresh token stored in the cache.
+func refreshSSOToken(ctx context.Context, cache *ssoCacheData, cfg aws.Config) (*ssoCacheData, error) {
+	ssooidcClient := ssooidc.NewFromConfig(cfg)
+
+	token, err := ssooidcClient.CreateToken(ctx, &ssooidc.CreateTokenInput{
+		ClientId:     aws.String(cache.ClientID),
+		ClientSecret: aws.String(cache.ClientSecret),
+		GrantType:    aws.String("refresh_token"),
+		RefreshToken: aws.String(cache.RefreshToken),
+	})
+	if err != nil {
+		return nil, fmt.Errorf("refresh token failed: %w", err)
+	}
+
+	cache.AccessToken = *token.AccessToken
+	cache.ExpiresAt = time.Now().UTC().Add(time.Duration(token.ExpiresIn) * time.Second)
+
+	if token.RefreshToken != nil {
+		cache.RefreshToken = *token.RefreshToken
+	}
+
+	return cache, nil
+}
+
 // ssoLogin performs the workflow required for an AWS SSO login.
-// It will open a web browser for the AWS SSO with the appropriate client code.
+// It will open a web browser for the AWS SSO login flow.
+// It tries the PKCE (Proof Key for Code Exchange) flow, and on failure, falls back to the Device Authorization flow.
 // Once the user has performed the AWS SSO login, the details of the session are written to the same on-disk cache
 // that the AWS CLI would write to. The AWS SDK uses this file automatically.
-func ssoLogin(ctx context.Context, cfg aws.Config) error {
-	// Recurse from assumed roles to the parent role until we find the configuration containing the SSO login details.
-	sharedConfig := checkSharedConfig(ctx, getSharedConfig(&cfg))
-
+func ssoLogin(ctx context.Context, cfg aws.Config, sharedConfig config.SharedConfig) error {
 	// Possibly these could be of use later?
 	// ssoAccountId = sharedConfig.SSOAccountID
 	// ssoRegion = sharedConfig.SSOSession.SSORegion
 
+	// Try PKCE flow, and fall back to the device authorization flow if it fails.
+	cacheData, err := ssoLoginWithPKCE(ctx, cfg, sharedConfig)
+	if err != nil {
+		log.Printf("PKCE login failed, falling back to device authorization flow: %v", err)
+
+		cacheData, err = ssoLoginWithDeviceAuthorization(ctx, cfg, sharedConfig)
+		if err != nil {
+			return fmt.Errorf("failed to perform AWS SSO login: %w", err)
+		}
+	}
+
+	cacheFilePath, err := getCacheFilePath(sharedConfig.SSOSessionName, cacheData.StartURL)
+	if err != nil {
+		return fmt.Errorf("%w: %w", errGetCachePath, err)
+	}
+
+	if err := writeCacheFile(cacheFilePath, cacheData); err != nil {
+		return fmt.Errorf("%w: %w", errWriteCacheFile, err)
+	}
+
+	return nil
+}
+
+// ssoLoginWithPKCE attempts to perform an AWS SSO login using the PKCE (Proof Key for Code Exchange) flow.
+func ssoLoginWithPKCE(ctx context.Context, cfg aws.Config, sharedConfig config.SharedConfig) (*ssoCacheData, error) {
 	ssoStartURL := sharedConfig.SSOSession.SSOStartURL
 	ssooidcClient := ssooidc.NewFromConfig(cfg)
 
-	clientName, err := ssoGetClientName(sharedConfig)
+	redirectURI, codeChan := startLocalCallbackServer()
+
+	registerClient, err := ssooidcClient.RegisterClient(ctx, &ssooidc.RegisterClientInput{
+		ClientName:   aws.String(clientName),
+		ClientType:   aws.String("public"),
+		GrantTypes:   []string{"authorization_code", "refresh_token"},
+		IssuerUrl:    aws.String(ssoStartURL),
+		RedirectUris: []string{redirectURI},
+		Scopes:       []string{"sso:account:access"},
+	})
 	if err != nil {
-		return fmt.Errorf("%w: %w", errGetClientName, err)
+		return nil, fmt.Errorf("%w: %w", errRegisterClient, err)
 	}
+
+	codeVerifier := generateCodeVerifier()
+	codeChallenge := generateCodeChallenge(codeVerifier)
+
+	authURL := fmt.Sprintf(
+		"https://oidc.ap-southeast-2.amazonaws.com/authorize"+
+			"?response_type=code"+
+			"&client_id=%s"+
+			"&redirect_uri=%s"+
+			"&state=dontcare"+
+			"&code_challenge_method=S256"+
+			"&scopes=%s"+
+			"&code_challenge=%s",
+		url.QueryEscape(*registerClient.ClientId),
+		url.QueryEscape(redirectURI),
+		url.QueryEscape("sso:account:access"),
+		codeChallenge,
+	)
+
+	fmt.Fprintf(os.Stderr, "Opening browser for login. If it doesn't open, go to:\n%s\n", authURL)
+
+	if err := browser.OpenURL(authURL); err != nil {
+		return nil, fmt.Errorf("%w: %w", errOpenBrowser, err)
+	}
+
+	// Read the authorization code from the local callback server.
+	code := <-codeChan
+
+	// Create the OIDC token.
+	token, err := ssooidcClient.CreateToken(ctx, &ssooidc.CreateTokenInput{
+		ClientId:     registerClient.ClientId,
+		ClientSecret: registerClient.ClientSecret,
+		GrantType:    aws.String("authorization_code"),
+		Code:         aws.String(code),
+		RedirectUri:  aws.String(redirectURI),
+		CodeVerifier: aws.String(codeVerifier),
+	})
+	if err != nil {
+		return nil, fmt.Errorf("%w: %w", errGetToken, err)
+	}
+
+	var refreshToken string
+	if token.RefreshToken != nil {
+		refreshToken = *token.RefreshToken
+	}
+
+	return &ssoCacheData{
+		StartURL:              ssoStartURL,
+		Region:                sharedConfig.Region,
+		AccessToken:           *token.AccessToken,
+		ExpiresAt:             time.Now().UTC().Add(time.Duration(token.ExpiresIn) * time.Second),
+		ClientID:              *registerClient.ClientId,
+		ClientSecret:          *registerClient.ClientSecret,
+		RegistrationExpiresAt: time.Unix(registerClient.ClientSecretExpiresAt, 0).UTC(),
+		RefreshToken:          refreshToken,
+	}, nil
+}
+
+// generateCodeVerifier creates a high-entropy PKCE code_verifier.
+func generateCodeVerifier() string {
+	const charset = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-._~"
+
+	const strLen = 64
+
+	char := make([]byte, strLen)
+	for idx := range char {
+		num, err := rand.Int(rand.Reader, big.NewInt(int64(len(charset))))
+		if err != nil {
+			log.Panicf("failed to generate random index: %v", err)
+		}
+
+		char[idx] = charset[num.Int64()]
+	}
+
+	return string(char)
+}
+
+// generateCodeChallenge creates a PKCE code_challenge from the code_verifier using SHA-256 hashing.
+func generateCodeChallenge(verifier string) string {
+	hash := sha256.Sum256([]byte(verifier))
+
+	return base64.RawURLEncoding.EncodeToString(hash[:])
+}
+
+// startLocalCallbackServer starts a local HTTP server to handle the callback from the AWS SSO login.
+// It listens on a random port and returns the redirect URI and a channel to receive the authorization code.
+func startLocalCallbackServer() (string, <-chan string) {
+	const httpReadTimeout = 5 * time.Second
+
+	codeChan := make(chan string, 1)
+
+	// Create a TCP listener on 127.0.0.1 on a random unused port.
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		log.Fatalf("failed to start listener: %v", err)
+	}
+
+	addr, ok := listener.Addr().(*net.TCPAddr)
+	if !ok {
+		log.Fatalf("listener.Addr() was not a *net.TCPAddr")
+	}
+
+	redirectURI := fmt.Sprintf("http://127.0.0.1:%d", addr.Port)
+
+	mux := http.NewServeMux()
+	server := &http.Server{Handler: mux, ReadHeaderTimeout: httpReadTimeout}
+
+	mux.HandleFunc("/", func(writer http.ResponseWriter, reader *http.Request) {
+		code := reader.URL.Query().Get("code")
+		if code != "" {
+			fmt.Fprintln(writer, "Login successful. You may now close this window.")
+
+			codeChan <- code
+		} else {
+			http.Error(writer, "No code found", http.StatusBadRequest)
+		}
+
+		// Close the server and log any error.
+		go func() {
+			if err := server.Close(); err != nil {
+				log.Printf("error closing local callback server: %v", err)
+			}
+		}()
+	})
+
+	go func() {
+		if err := server.Serve(listener); err != nil {
+			if !errors.Is(err, http.ErrServerClosed) {
+				log.Printf("error with local callback server: %v", err)
+			}
+		}
+	}()
+
+	return redirectURI, codeChan
+}
+
+// ssoLoginWithDeviceAuthorization attempts to perform an AWS SSO login using the Device-Authorization flow.
+func ssoLoginWithDeviceAuthorization(
+	ctx context.Context, cfg aws.Config, sharedConfig config.SharedConfig,
+) (*ssoCacheData, error) {
+	ssoStartURL := sharedConfig.SSOSession.SSOStartURL
+	ssooidcClient := ssooidc.NewFromConfig(cfg)
 
 	registerClient, err := ssooidcClient.RegisterClient(ctx, &ssooidc.RegisterClientInput{
 		ClientName: aws.String(clientName),
@@ -130,7 +370,7 @@ func ssoLogin(ctx context.Context, cfg aws.Config) error {
 		Scopes:     []string{"sso-portal:*"},
 	})
 	if err != nil {
-		return fmt.Errorf("%w: %w", errRegisterClient, err)
+		return nil, fmt.Errorf("%w: %w", errRegisterClient, err)
 	}
 
 	deviceAuth, err := ssooidcClient.StartDeviceAuthorization(ctx, &ssooidc.StartDeviceAuthorizationInput{
@@ -139,20 +379,20 @@ func ssoLogin(ctx context.Context, cfg aws.Config) error {
 		StartUrl:     aws.String(ssoStartURL),
 	})
 	if err != nil {
-		return fmt.Errorf("%w: %w", errStartDeviceAuth, err)
+		return nil, fmt.Errorf("%w: %w", errStartDeviceAuth, err)
 	}
 
 	authURL := aws.ToString(deviceAuth.VerificationUriComplete)
 	fmt.Fprintf(os.Stderr, "If your browser doesn't open, then open the following URL:\n%s\n\n", authURL)
 
 	if err := browser.OpenURL(authURL); err != nil {
-		return fmt.Errorf("%w: %w", errOpenBrowser, err)
+		return nil, fmt.Errorf("%w: %w", errOpenBrowser, err)
 	}
 
-	// Check every 2 seconds up to 1 minute for the browser login to be completed.
+	// Wait a while for the browser login to be completed.
 	token, err := ssoTokenWait(ctx, ssooidcClient, registerClient, deviceAuth)
 	if err != nil {
-		return fmt.Errorf("%w: %w", errGetToken, err)
+		return nil, fmt.Errorf("%w: %w", errGetToken, err)
 	}
 
 	var refreshToken string
@@ -160,7 +400,7 @@ func ssoLogin(ctx context.Context, cfg aws.Config) error {
 		refreshToken = *token.RefreshToken
 	}
 
-	cacheData := ssoCacheData{
+	return &ssoCacheData{
 		StartURL:              ssoStartURL,
 		Region:                sharedConfig.Region,
 		AccessToken:           *token.AccessToken,
@@ -169,43 +409,22 @@ func ssoLogin(ctx context.Context, cfg aws.Config) error {
 		ClientSecret:          *registerClient.ClientSecret,
 		RegistrationExpiresAt: time.Unix(registerClient.ClientSecretExpiresAt, 0).UTC(),
 		RefreshToken:          refreshToken,
-	}
-
-	cacheFilePath, err := getCacheFilePath(sharedConfig.SSOSessionName, ssoStartURL)
-	if err != nil {
-		return fmt.Errorf("%w: %w", errGetCachePath, err)
-	}
-
-	if err := writeCacheFile(cacheFilePath, &cacheData); err != nil {
-		return fmt.Errorf("%w: %w", errWriteCacheFile, err)
-	}
-
-	return nil
+	}, nil
 }
 
-func ssoGetClientName(sharedConfig config.SharedConfig) (string, error) {
-	if sharedConfig.RoleSessionName != "" {
-		return sharedConfig.RoleSessionName, nil
-	}
-
-	osUser, err := user.Current()
-	if err != nil {
-		return "", fmt.Errorf("%w: %w", errOSUserNotFound, err)
-	}
-
-	return fmt.Sprintf("%s-%s-%s", osUser, sharedConfig.Profile, sharedConfig.SSORoleName), nil
-}
-
+// ssoTokenWait polls for the token in the Device Authorization flow after the user has logged in via the web browser.
+// It checks every 2 seconds up to 1 minute for the browser login to be completed.
 func ssoTokenWait(
 	ctx context.Context,
 	ssooidcClient *ssooidc.Client,
 	registerClient *ssooidc.RegisterClientOutput,
 	deviceAuth *ssooidc.StartDeviceAuthorizationOutput,
 ) (*ssooidc.CreateTokenOutput, error) {
+	const sleepTime = 2 * time.Second
+
 	var createTokenErr error
 
 	timeout := time.Minute
-	sleepTime := 2 * time.Second
 	startTime := time.Now()
 
 	token := new(ssooidc.CreateTokenOutput)
@@ -216,9 +435,6 @@ func ssoTokenWait(
 				ClientSecret: registerClient.ClientSecret,
 				DeviceCode:   deviceAuth.DeviceCode,
 				GrantType:    aws.String("urn:ietf:params:oauth:grant-type:device_code"),
-				// TODO: Work out how to use the following instead of DeviceCode and the above GrantType?
-				// Is this the key to getting refreshToken in my SSO cached credentials?
-				// GrantType:    aws.String("refresh_token"),
 			},
 		)
 		if createTokenErr == nil {
@@ -290,6 +506,22 @@ func getCacheFilePath(ssoSessionName, ssoStartURL string) (string, error) {
 	}
 
 	return cacheFilePath, nil
+}
+
+// readCacheFile reads the contents of the valid credentials from a file containing the results of an AWS SSO login.
+// It is expected that the correct cache file path is passed in as retrieved via the getCacheFilePath() function.
+func readCacheFile(cacheFilePath string) (*ssoCacheData, error) {
+	data, err := os.ReadFile(cacheFilePath)
+	if err != nil {
+		return nil, err
+	}
+
+	var cache ssoCacheData
+	if err := json.Unmarshal(data, &cache); err != nil {
+		return nil, err
+	}
+
+	return &cache, nil
 }
 
 // writeCacheFile writes the contents of the valid credentials received after an AWS SSO login to a file.

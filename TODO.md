@@ -1,6 +1,5 @@
 # Things to do
 
-* Have the AWS SSO flow use the same OIDC method that the AWS CLI v2 moved to.
 * Improvements for `ssm` command:
   * Handle getting and putting tags.
   * Implement `copy` command.

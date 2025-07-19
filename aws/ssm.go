@@ -18,6 +18,9 @@ import (
 	"golang.org/x/sync/errgroup"
 )
 
+// Number of concurrent SSM API calls to allow.
+const ssmConcurrencyLimit = 20
+
 // SSMParameter represents some of the fields that makes up a parameter in the AWS SSM Parameter Store.
 type SSMParameter struct {
 	AllowedPattern   string              `json:"allowedPattern,omitempty"`
@@ -47,20 +50,21 @@ func (p *SSMParameter) Print(hideValue, json bool) {
 }
 
 // printJSON is a helper function to print an SSMParameter in JSON format.
-func printJSON(p SSMParameter, hideValue bool) {
+func printJSON(param SSMParameter, hideValue bool) {
 	var (
 		err      error
 		jsonData []byte
 	)
 
 	if hideValue {
-		jsonData, err = util.MarshalWithoutFields(p, "value")
+		jsonData, err = util.MarshalWithoutFields(param, "value")
 	} else {
-		jsonData, err = json.Marshal(p)
+		jsonData, err = json.Marshal(param)
 	}
 
 	if err != nil {
 		fmt.Printf("Error converting SSMParameter copy to JSON: %v\n", err)
+
 		return
 	}
 
@@ -68,25 +72,25 @@ func printJSON(p SSMParameter, hideValue bool) {
 }
 
 // printText is a helper function to print an SSMParameter in text format.
-func printText(p SSMParameter, hideValue bool) {
-	printTextIfNotEmpty("AllowedPattern", p.AllowedPattern)
-	fmt.Printf("ARN: %s\n", p.ARN)
-	fmt.Printf("DataType: %s\n", p.DataType)
-	printTextIfNotEmpty("Description", p.Description)
-	printTextIfNotEmpty("Error", p.Error)
-	printTextIfNotEmpty("KeyID", p.KeyID)
-	fmt.Printf("LastModifiedDate: %s\n", p.LastModifiedDate)
-	printTextIfNotEmpty("LastModifiedUser", p.LastModifiedUser)
-	fmt.Printf("Name: %s\n", p.Name)
-	printTextIfNotEmpty("Policies", p.Policies)
-	printTextIfNotEmpty("Tier", string(p.Tier))
-	fmt.Printf("Type: %s\n", p.Type)
+func printText(param SSMParameter, hideValue bool) {
+	printTextIfNotEmpty("AllowedPattern", param.AllowedPattern)
+	fmt.Printf("ARN: %s\n", param.ARN)
+	fmt.Printf("DataType: %s\n", param.DataType)
+	printTextIfNotEmpty("Description", param.Description)
+	printTextIfNotEmpty("Error", param.Error)
+	printTextIfNotEmpty("KeyID", param.KeyID)
+	fmt.Printf("LastModifiedDate: %s\n", param.LastModifiedDate)
+	printTextIfNotEmpty("LastModifiedUser", param.LastModifiedUser)
+	fmt.Printf("Name: %s\n", param.Name)
+	printTextIfNotEmpty("Policies", param.Policies)
+	printTextIfNotEmpty("Tier", string(param.Tier))
+	fmt.Printf("Type: %s\n", param.Type)
 
 	if !hideValue {
-		fmt.Printf("Value: %s\n", p.Value)
+		fmt.Printf("Value: %s\n", param.Value)
 	}
 
-	fmt.Printf("Version: %d\n", p.Version)
+	fmt.Printf("Version: %d\n", param.Version)
 }
 
 // printTextIfNotEmpty is a helper function to print a field if it is not empty.
@@ -175,17 +179,17 @@ func SSMDescribeParameter(
 // SSMGet returns a populated SSMParameter structure populated with details of a named SSM parameter from the
 // GetParameter() call, and optionally the DescribeParameter() call.
 func SSMGet(ctx context.Context, ssmClient *ssm.Client, name string, describe bool) (SSMParameter, error) {
-	var p SSMParameter
+	var param SSMParameter
 
-	g := new(errgroup.Group)
+	grp := new(errgroup.Group)
 
-	g.Go(func() error {
+	grp.Go(func() error {
 		output, err := ssmClient.GetParameter(ctx, &ssm.GetParameterInput{
 			Name:           aws.String(name),
 			WithDecryption: aws.Bool(true),
 		})
 		if err != nil {
-			p.Error = fmt.Sprint(err)
+			param.Error = fmt.Sprint(err)
 
 			output, err = ssmClient.GetParameter(ctx, &ssm.GetParameterInput{Name: aws.String(name)})
 			if err != nil {
@@ -195,45 +199,45 @@ func SSMGet(ctx context.Context, ssmClient *ssm.Client, name string, describe bo
 			output.Parameter.Value = aws.String("")
 		}
 
-		p.ARN = aws.ToString(output.Parameter.ARN)
+		param.ARN = aws.ToString(output.Parameter.ARN)
 
 		// For some reason some SSM parameters had no data type set... These seem to show in the GUI as text.
 		if output.Parameter.DataType == nil {
-			p.DataType = "text"
+			param.DataType = "text"
 		} else {
-			p.DataType = aws.ToString(output.Parameter.DataType)
+			param.DataType = aws.ToString(output.Parameter.DataType)
 		}
 
-		p.LastModifiedDate = aws.ToTime(output.Parameter.LastModifiedDate)
-		p.Name = aws.ToString(output.Parameter.Name)
-		p.Type = string(output.Parameter.Type)
-		p.Value = aws.ToString(output.Parameter.Value)
-		p.Version = output.Parameter.Version
+		param.LastModifiedDate = aws.ToTime(output.Parameter.LastModifiedDate)
+		param.Name = aws.ToString(output.Parameter.Name)
+		param.Type = string(output.Parameter.Type)
+		param.Value = aws.ToString(output.Parameter.Value)
+		param.Version = output.Parameter.Version
 
 		return nil
 	})
 
 	if describe {
-		g.Go(func() error {
+		grp.Go(func() error {
 			var err error
 
-			p.AllowedPattern,
-				p.Description,
-				p.KeyID,
-				p.LastModifiedUser,
-				p.Policies,
-				p.Tier,
+			param.AllowedPattern,
+				param.Description,
+				param.KeyID,
+				param.LastModifiedUser,
+				param.Policies,
+				param.Tier,
 				err = SSMDescribeParameter(ctx, ssmClient, name)
 
 			return err
 		})
 	}
 
-	if err := g.Wait(); err != nil {
+	if err := grp.Wait(); err != nil {
 		return SSMParameter{}, err
 	}
 
-	return p, nil
+	return param, nil
 }
 
 // SSMList returns a list of parameters below a path in the SSM parameter store.
@@ -254,15 +258,15 @@ func SSMList(ctx context.Context, ssmClient *ssm.Client, path string, recursive,
 			return nil, fmt.Errorf("%w : %w", errParameterGetByPath, err)
 		}
 
-		for _, p := range output.Parameters {
+		for _, param := range output.Parameters {
 			params = append(params, SSMParameter{
-				ARN:              aws.ToString(p.ARN),
-				DataType:         aws.ToString(p.DataType),
-				LastModifiedDate: aws.ToTime(p.LastModifiedDate),
-				Name:             aws.ToString(p.Name),
-				Type:             string(p.Type),
-				Value:            aws.ToString(p.Value),
-				Version:          p.Version,
+				ARN:              aws.ToString(param.ARN),
+				DataType:         aws.ToString(param.DataType),
+				LastModifiedDate: aws.ToTime(param.LastModifiedDate),
+				Name:             aws.ToString(param.Name),
+				Type:             string(param.Type),
+				Value:            aws.ToString(param.Value),
+				Version:          param.Version,
 			})
 		}
 	}
@@ -276,44 +280,44 @@ func SSMList(ctx context.Context, ssmClient *ssm.Client, path string, recursive,
 	result := make([]SSMParameter, len(params))
 
 	// Use a semaphore to limit concurrency to avoid overwhelming the SSM API.
-	ssmConcurrency := make(chan struct{}, 20)
-	g := new(errgroup.Group)
+	ssmConcurrency := make(chan struct{}, ssmConcurrencyLimit)
+	grp := new(errgroup.Group)
 
-	for i := range params {
+	for idx := range params {
 		// Acquire a semaphore
 		ssmConcurrency <- struct{}{}
 
 		// Capture the current value of the loop variable.
 		// The goroutines can't reference the loop variable directly since they run in parallel and will get its
 		// value at the time they run.
-		idx := i
+		index := idx
 
-		g.Go(func() error {
+		grp.Go(func() error {
 			// Release the semaphore upon completion
 			defer func() { <-ssmConcurrency }()
 
 			var err error
 
-			p := params[idx]
+			param := params[index]
 
-			p.AllowedPattern,
-				p.Description,
-				p.KeyID,
-				p.LastModifiedUser,
-				p.Policies,
-				p.Tier,
-				err = SSMDescribeParameter(ctx, ssmClient, p.Name)
+			param.AllowedPattern,
+				param.Description,
+				param.KeyID,
+				param.LastModifiedUser,
+				param.Policies,
+				param.Tier,
+				err = SSMDescribeParameter(ctx, ssmClient, param.Name)
 			if err != nil {
-				return fmt.Errorf("%w: %w", NewParameterDescribeError(p.Name), err)
+				return fmt.Errorf("%w: %w", NewParameterDescribeError(param.Name), err)
 			}
 
-			result[i] = p
+			result[idx] = param
 
 			return nil
 		})
 	}
 
-	if err := g.Wait(); err != nil {
+	if err := grp.Wait(); err != nil {
 		return nil, err
 	}
 
@@ -341,29 +345,29 @@ func SSMListSafeDecrypt(
 			return nil, fmt.Errorf("%w : %w", errParameterGetByPath, err)
 		}
 
-		for _, p := range output.Parameters {
-			param := SSMParameter{
-				ARN:              aws.ToString(p.ARN),
-				DataType:         aws.ToString(p.DataType),
-				LastModifiedDate: aws.ToTime(p.LastModifiedDate),
-				Name:             aws.ToString(p.Name),
-				Type:             string(p.Type),
-				Version:          p.Version,
+		for _, param := range output.Parameters {
+			parameter := SSMParameter{
+				ARN:              aws.ToString(param.ARN),
+				DataType:         aws.ToString(param.DataType),
+				LastModifiedDate: aws.ToTime(param.LastModifiedDate),
+				Name:             aws.ToString(param.Name),
+				Type:             string(param.Type),
+				Version:          param.Version,
 			}
 
-			if types.ParameterType(param.Type) == types.ParameterTypeSecureString {
-				par, err := SSMGet(ctx, ssmClient, param.Name, false)
+			if types.ParameterType(parameter.Type) == types.ParameterTypeSecureString {
+				par, err := SSMGet(ctx, ssmClient, parameter.Name, false)
 				if err != nil {
-					param.Error = fmt.Sprint(err)
+					parameter.Error = fmt.Sprint(err)
 				} else {
-					param.Error = par.Error
-					param.Value = par.Value
+					parameter.Error = par.Error
+					parameter.Value = par.Value
 				}
 			} else {
-				param.Value = aws.ToString(p.Value)
+				parameter.Value = aws.ToString(param.Value)
 			}
 
-			params = append(params, param)
+			params = append(params, parameter)
 		}
 	}
 
@@ -376,44 +380,44 @@ func SSMListSafeDecrypt(
 	result := make([]SSMParameter, len(params))
 
 	// Use a semaphore to limit concurrency to avoid overwhelming the SSM API.
-	ssmConcurrency := make(chan struct{}, 20)
-	g := new(errgroup.Group)
+	ssmConcurrency := make(chan struct{}, ssmConcurrencyLimit)
+	grp := new(errgroup.Group)
 
-	for i := range params {
+	for idx := range params {
 		// Acquire a semaphore
 		ssmConcurrency <- struct{}{}
 
 		// Capture the current value of the loop variable.
 		// The goroutines can't reference the loop variable directly since they run in parallel and will get its
 		// value at the time they run.
-		idx := i
+		index := idx
 
-		g.Go(func() error {
+		grp.Go(func() error {
 			// Release the semaphore upon completion
 			defer func() { <-ssmConcurrency }()
 
 			var err error
 
-			p := params[idx]
+			param := params[index]
 
-			p.AllowedPattern,
-				p.Description,
-				p.KeyID,
-				p.LastModifiedUser,
-				p.Policies,
-				p.Tier,
-				err = SSMDescribeParameter(ctx, ssmClient, p.Name)
+			param.AllowedPattern,
+				param.Description,
+				param.KeyID,
+				param.LastModifiedUser,
+				param.Policies,
+				param.Tier,
+				err = SSMDescribeParameter(ctx, ssmClient, param.Name)
 			if err != nil {
-				return fmt.Errorf("%w: %w", NewParameterDescribeError(p.Name), err)
+				return fmt.Errorf("%w: %w", NewParameterDescribeError(param.Name), err)
 			}
 
-			result[i] = p
+			result[idx] = param
 
 			return nil
 		})
 	}
 
-	if err := g.Wait(); err != nil {
+	if err := grp.Wait(); err != nil {
 		return nil, err
 	}
 

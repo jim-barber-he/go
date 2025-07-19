@@ -138,7 +138,7 @@ func LastSplitItem(str, splitChar string) string {
 	return ""
 }
 
-// MarshalWithoutFields marshals a struct to JSON ommitting one or more fields.
+// MarshalWithoutFields marshals a struct to JSON omitting one or more fields.
 func MarshalWithoutFields(v any, omitFields ...string) ([]byte, error) {
 	rawJSON, err := json.Marshal(v)
 	if err != nil {
@@ -203,13 +203,13 @@ func TerminalSize() (int, int, error) {
 	fds := []int{int(os.Stdout.Fd()), int(os.Stderr.Fd()), int(os.Stdin.Fd())}
 	errs := make([]error, len(fds))
 
-	for i, fd := range fds {
+	for idx, fd := range fds {
 		cols, rows, err := term.GetSize(fd)
 		if err == nil {
 			return cols, rows, nil
 		}
 
-		errs[i] = fmt.Errorf("fd %d: %w", fd, err)
+		errs[idx] = fmt.Errorf("fd %d: %w", fd, err)
 	}
 
 	return 0, 0, fmt.Errorf("%w: %v", errTerminalSize, errs)
