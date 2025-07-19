@@ -64,6 +64,7 @@ func GetNamespace(client kubernetes.Interface, name string) (*v1.Namespace, erro
 	ptr, err := client.CoreV1().Namespaces().Get(context.Background(), name, metav1.GetOptions{})
 	if err != nil {
 		err = fmt.Errorf("%w: %w", errGettingNamespace, err)
+
 		return nil, err
 	}
 
@@ -114,6 +115,7 @@ func isRestartableInitContainer(initContainer *v1.Container) bool {
 // KubeConfig returns the user's kube config file.
 func KubeConfig() string {
 	configAccess := clientcmd.NewDefaultPathOptions()
+
 	return configAccess.GetDefaultFilename()
 }
 
@@ -208,7 +210,7 @@ func PodDetails(pod *v1.Pod) (readyContainers, totalContainers int, status, rest
 
 	initializing := false
 
-	for i, icStatus := range pod.Status.InitContainerStatuses {
+	for idx, icStatus := range pod.Status.InitContainerStatuses {
 		restartCount += int(icStatus.RestartCount)
 		if icStatus.LastTerminationState.Terminated != nil {
 			terminatedDate := icStatus.LastTerminationState.Terminated.FinishedAt.Time
@@ -255,7 +257,7 @@ func PodDetails(pod *v1.Pod) (readyContainers, totalContainers int, status, rest
 			status = "Init:" + icStatus.State.Waiting.Reason
 			initializing = true
 		default:
-			status = fmt.Sprintf("Init:%d/%d", i, len(pod.Spec.InitContainers))
+			status = fmt.Sprintf("Init:%d/%d", idx, len(pod.Spec.InitContainers))
 			initializing = true
 		}
 

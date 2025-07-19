@@ -28,8 +28,8 @@ func newBriefAndFullError(usage string) error {
 	}
 }
 
-// newBriefAndJsonError creates a new error for when the --brief and --json options are both specified.
-func newBriefAndJsonError(usage string) error {
+// newBriefAndJSONError creates a new error for when the --brief and --json options are both specified.
+func newBriefAndJSONError(usage string) error {
 	return &util.Error{
 		Msg:   "it does not make sense to specify both --brief and --json\n",
 		Param: usage,

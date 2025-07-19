@@ -220,11 +220,11 @@ func createTableRow(pod *v1.Pod, nodes map[string]*v1.Node, allNamespaces bool) 
 func fetchNodesAndPods(
 	clientset *kubernetes.Clientset, namespace string, labelSelector string,
 ) (map[string]*v1.Node, *v1.PodList, error) {
-	g := new(errgroup.Group)
+	grp := new(errgroup.Group)
 
 	nodes := make(map[string]*v1.Node)
 
-	g.Go(func() error {
+	grp.Go(func() error {
 		nodeList, err := k8s.ListNodes(clientset)
 		if err != nil {
 			return fmt.Errorf("failed to list nodes: %w", err)
@@ -239,7 +239,7 @@ func fetchNodesAndPods(
 
 	pods := &v1.PodList{}
 
-	g.Go(func() error {
+	grp.Go(func() error {
 		listPods, err := k8s.ListPods(clientset, namespace, labelSelector)
 		if err != nil {
 			return fmt.Errorf("failed to list pods: %w", err)
@@ -254,7 +254,7 @@ func fetchNodesAndPods(
 		return nil
 	})
 
-	if err := g.Wait(); err != nil {
+	if err := grp.Wait(); err != nil {
 		return nil, nil, fmt.Errorf("failed to fetch nodes and/or pods: %w", err)
 	}
 

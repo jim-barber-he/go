@@ -37,8 +37,8 @@ func (t *Table[R]) Write(w ...io.Writer) {
 	}
 
 	// Using the first row of the table, use reflection to determine what fields are in the table row.
-	v := reflect.ValueOf(t.Rows[0]).Elem()
-	fields := reflect.VisibleFields(v.Type())
+	val := reflect.ValueOf(t.Rows[0]).Elem()
+	fields := reflect.VisibleFields(val.Type())
 	numFields := len(fields)
 
 	// Create a slice to determine which fields to omit from the output.
@@ -57,6 +57,7 @@ func (t *Table[R]) Write(w ...io.Writer) {
 			for _, row := range t.Rows {
 				if reflect.ValueOf(row).Elem().Field(i).String() != "" {
 					omit[i] = false
+
 					break
 				}
 			}
@@ -87,14 +88,14 @@ func (t *Table[R]) Write(w ...io.Writer) {
 	// Add the table rows skipping any `omitempty` columns where all its values are empty.
 	for _, row := range t.Rows {
 		s = nil
-		v = reflect.ValueOf(row).Elem()
+		val = reflect.ValueOf(row).Elem()
 
 		for i := range numFields {
 			if omit[i] {
 				continue
 			}
 
-			s = append(s, v.Field(i).String())
+			s = append(s, val.Field(i).String())
 		}
 
 		fmt.Fprintln(tw, strings.Join(s, "\t"))
