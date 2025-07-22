@@ -26,11 +26,10 @@ import (
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/credentials/ssocreds"
 	"github.com/aws/aws-sdk-go-v2/service/ssooidc"
+	"github.com/aws/aws-sdk-go-v2/service/ssooidc/types"
 	"github.com/aws/aws-sdk-go-v2/service/sts"
 	"github.com/pkg/browser"
 )
-
-const clientName = "github.com/jim-barber-he/go/aws/sso"
 
 // LoginSessionDetails is for passing AWS Profile and Region options to the Login function.
 type LoginSessionDetails struct {
@@ -89,7 +88,7 @@ func loadConfig(ctx context.Context, details *LoginSessionDetails) aws.Config {
 
 // Login gets a session to AWS, optionally specifying an AWS Profile & Region to use via the LoginSessionDetails option.
 // If the session in the on-disk cache files are invalid, then perform the AWS SSO workflow to have the user login.
-func Login(ctx context.Context, details *LoginSessionDetails) aws.Config {
+func Login(ctx context.Context, details *LoginSessionDetails, clientName string) aws.Config {
 	// Load the AWS configuration based on the provided details.
 	cfg := loadConfig(ctx, details)
 
@@ -115,7 +114,12 @@ func Login(ctx context.Context, details *LoginSessionDetails) aws.Config {
 						return cfg
 					}
 
-					log.Printf("Token refresh failed, falling back to login: %v", err)
+					var errInvalidGrant *types.InvalidGrantException
+					if errors.As(err, &errInvalidGrant) {
+						log.Println("Token expired, falling back to login")
+					} else {
+						log.Printf("Token refresh failed, falling back to login: %v", err)
+					}
 				}
 			} else {
 				// Still valid — skip login
@@ -125,7 +129,7 @@ func Login(ctx context.Context, details *LoginSessionDetails) aws.Config {
 	}
 
 	// Session is not valid, so need to perform an AWS SSO login.
-	if err := ssoLogin(ctx, cfg, sharedConfig); err != nil {
+	if err := ssoLogin(ctx, cfg, sharedConfig, clientName); err != nil {
 		log.Panicf("failed to perform AWS SSO login: %v", err)
 	}
 
@@ -175,17 +179,17 @@ func refreshSSOToken(ctx context.Context, cache *ssoCacheData, cfg aws.Config) (
 // It tries the PKCE (Proof Key for Code Exchange) flow, and on failure, falls back to the Device Authorization flow.
 // Once the user has performed the AWS SSO login, the details of the session are written to the same on-disk cache
 // that the AWS CLI would write to. The AWS SDK uses this file automatically.
-func ssoLogin(ctx context.Context, cfg aws.Config, sharedConfig config.SharedConfig) error {
+func ssoLogin(ctx context.Context, cfg aws.Config, sharedConfig config.SharedConfig, clientName string) error {
 	// Possibly these could be of use later?
 	// ssoAccountId = sharedConfig.SSOAccountID
 	// ssoRegion = sharedConfig.SSOSession.SSORegion
 
 	// Try PKCE flow, and fall back to the device authorization flow if it fails.
-	cacheData, err := ssoLoginWithPKCE(ctx, cfg, sharedConfig)
+	cacheData, err := ssoLoginWithPKCE(ctx, cfg, sharedConfig, clientName)
 	if err != nil {
 		log.Printf("PKCE login failed, falling back to device authorization flow: %v", err)
 
-		cacheData, err = ssoLoginWithDeviceAuthorization(ctx, cfg, sharedConfig)
+		cacheData, err = ssoLoginWithDeviceAuthorization(ctx, cfg, sharedConfig, clientName)
 		if err != nil {
 			return fmt.Errorf("failed to perform AWS SSO login: %w", err)
 		}
@@ -204,7 +208,9 @@ func ssoLogin(ctx context.Context, cfg aws.Config, sharedConfig config.SharedCon
 }
 
 // ssoLoginWithPKCE attempts to perform an AWS SSO login using the PKCE (Proof Key for Code Exchange) flow.
-func ssoLoginWithPKCE(ctx context.Context, cfg aws.Config, sharedConfig config.SharedConfig) (*ssoCacheData, error) {
+func ssoLoginWithPKCE(
+	ctx context.Context, cfg aws.Config, sharedConfig config.SharedConfig, clientName string,
+) (*ssoCacheData, error) {
 	ssoStartURL := sharedConfig.SSOSession.SSOStartURL
 	ssooidcClient := ssooidc.NewFromConfig(cfg)
 
@@ -359,7 +365,7 @@ func startLocalCallbackServer() (string, <-chan string) {
 
 // ssoLoginWithDeviceAuthorization attempts to perform an AWS SSO login using the Device-Authorization flow.
 func ssoLoginWithDeviceAuthorization(
-	ctx context.Context, cfg aws.Config, sharedConfig config.SharedConfig,
+	ctx context.Context, cfg aws.Config, sharedConfig config.SharedConfig, clientName string,
 ) (*ssoCacheData, error) {
 	ssoStartURL := sharedConfig.SSOSession.SSOStartURL
 	ssooidcClient := ssooidc.NewFromConfig(cfg)

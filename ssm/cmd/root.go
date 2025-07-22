@@ -11,6 +11,8 @@ import (
 	"strings"
 
 	"github.com/MakeNowJust/heredoc/v2"
+	"github.com/aws/aws-sdk-go-v2/service/ssm"
+	"github.com/jim-barber-he/go/aws"
 	"github.com/jim-barber-he/go/util"
 	"github.com/spf13/cobra"
 )
@@ -117,6 +119,14 @@ func getDefaultRegion() string {
 	default:
 		return "ap-southeast-2"
 	}
+}
+
+// getSSMClient returns an SSM client based on the provided environment name.
+func getSSMClient(ctx context.Context, environment string) *ssm.Client {
+	profile := getAWSProfile(environment)
+	cfg := aws.Login(ctx, &aws.LoginSessionDetails{Profile: profile, Region: rootOpts.region}, "ssm")
+
+	return aws.SSMClient(cfg)
 }
 
 // getSSMPath takes an environment name and a path to a location in the SSM parameter store
