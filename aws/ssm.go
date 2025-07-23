@@ -152,7 +152,6 @@ func SSMDescribeParameter(
 	allowedPattern = aws.ToString(param.AllowedPattern)
 	description = aws.ToString(param.Description)
 
-	keyID = ""
 	if param.Type == types.ParameterTypeSecureString {
 		keyID = aws.ToString(param.KeyId)
 	}

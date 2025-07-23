@@ -31,6 +31,14 @@ const (
 	tabStopWidth = 8
 )
 
+// This variable is set at build time to the version of the application using it.
+var version = ""
+
+// DisplayVersion prints the version of the application to stderr.
+func DisplayVersion(app string) {
+	fmt.Printf("%s version %s\n", app, version)
+}
+
 // FormatAge returns the age in a human readable format of the first 2 non-zero time units from weeks to seconds,
 // or just the seconds if no higher time unit was above 0.
 // This differs from duration.String() in that it also handles weeks and days.

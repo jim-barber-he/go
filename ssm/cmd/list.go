@@ -118,9 +118,7 @@ func validateListOptions(cmd *cobra.Command) error {
 // args[0] is the name of to AWS Profile to use when accessing the SSM parameter store.
 // args[1] is the path of the SSM parameter to list.
 func doList(ctx context.Context, args []string) error {
-	profile := getAWSProfile(args[0])
-	cfg := aws.Login(ctx, &aws.LoginSessionDetails{Profile: profile, Region: rootOpts.region})
-	ssmClient := aws.SSMClient(cfg)
+	ssmClient := getSSMClient(ctx, args[0])
 
 	var path string
 	if len(args) > 1 {

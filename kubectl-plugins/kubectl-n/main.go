@@ -61,8 +61,15 @@ type tableRow struct {
 
 func main() {
 	kubeContext := flag.String("context", "", "The name of the kubeconfig context to use")
+	version := flag.BoolP("version", "v", false, "Display the version of this tool")
 	wide := flag.BoolP("wide", "w", false, "Add KernelVersion, OSImage, and Architecture columns")
 	flag.Parse()
+
+	if *version {
+		util.DisplayVersion("kubectl-n")
+
+		return
+	}
 
 	clientset := k8s.Client(*kubeContext)
 

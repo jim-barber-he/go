@@ -134,9 +134,7 @@ func validatePutOptions() error {
 // args[1] is the path of the SSM parameter to put.
 // args[2] is the value to put, but is only valid to use if --file is not used.
 func doPut(ctx context.Context, args []string) error {
-	profile := getAWSProfile(args[0])
-	cfg := aws.Login(ctx, &aws.LoginSessionDetails{Profile: profile, Region: rootOpts.region})
-	ssmClient := aws.SSMClient(cfg)
+	ssmClient := getSSMClient(ctx, args[0])
 
 	param := getSSMPath(args[0], args[1])
 

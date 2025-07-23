@@ -1,4 +1,4 @@
-ARCH := $(shell uname -s | tr '[A-Z]' '[a-z]')
+ARCH=$(shell uname -s | tr '[A-Z]' '[a-z]')
 BINARY_NAME=golock
 
 .PHONY: all build clean install lint run vet
