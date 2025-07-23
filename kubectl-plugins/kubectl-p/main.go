@@ -52,6 +52,7 @@ type options struct {
 	namespace     string
 	profileCPU    string
 	profileMemory string
+	version       bool
 }
 
 // newNoMatchingPodsFoundError returns an error indicating that no matching pods were found.
@@ -78,7 +79,14 @@ func main() {
 	flag.StringVarP(&opts.namespace, "namespace", "n", "", "If present, the namespace scope for this CLI request")
 	flag.StringVar(&opts.profileCPU, "profile-cpu", "", "Produce pprof cpu profiling output in supplied file")
 	flag.StringVar(&opts.profileMemory, "profile-mem", "", "Produce pprof memory profiling output in supplied file")
+	flag.BoolVarP(&opts.version, "version", "v", false, "Print the version of this tool")
 	flag.Parse()
+
+	if opts.version {
+		util.DisplayVersion("kubectl-p")
+
+		return
+	}
 
 	// Have run() do the main work so that it can use defer statements,
 	// while still giving us, the ability to use os.Exit(1) or log.Fatal*.
