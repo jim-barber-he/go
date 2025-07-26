@@ -28,6 +28,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/ssooidc"
 	"github.com/aws/aws-sdk-go-v2/service/ssooidc/types"
 	"github.com/aws/aws-sdk-go-v2/service/sts"
+	"github.com/google/uuid"
 	"github.com/pkg/browser"
 )
 
@@ -214,7 +215,9 @@ func ssoLoginWithPKCE(
 	ssoStartURL := sharedConfig.SSOSession.SSOStartURL
 	ssooidcClient := ssooidc.NewFromConfig(cfg)
 
-	redirectURI, codeChan := startLocalCallbackServer()
+	expectedState := uuid.NewString()
+
+	redirectURI, codeChan := localCallbackServer(ctx, expectedState)
 
 	registerClient, err := ssooidcClient.RegisterClient(ctx, &ssooidc.RegisterClientInput{
 		ClientName:   aws.String(clientName),
@@ -236,12 +239,13 @@ func ssoLoginWithPKCE(
 			"?response_type=code"+
 			"&client_id=%s"+
 			"&redirect_uri=%s"+
-			"&state=dontcare"+
+			"&state=%s"+
 			"&code_challenge_method=S256"+
 			"&scopes=%s"+
 			"&code_challenge=%s",
 		url.QueryEscape(*registerClient.ClientId),
 		url.QueryEscape(redirectURI),
+		expectedState,
 		url.QueryEscape("sso:account:access"),
 		codeChallenge,
 	)
@@ -311,15 +315,17 @@ func generateCodeChallenge(verifier string) string {
 	return base64.RawURLEncoding.EncodeToString(hash[:])
 }
 
-// startLocalCallbackServer starts a local HTTP server to handle the callback from the AWS SSO login.
+// localCallbackServer starts a local HTTP server to handle the callback from the AWS SSO login.
 // It listens on a random port and returns the redirect URI and a channel to receive the authorization code.
-func startLocalCallbackServer() (string, <-chan string) {
+func localCallbackServer(ctx context.Context, expectedState string) (string, <-chan string) {
 	const httpReadTimeout = 5 * time.Second
+
+	var lc net.ListenConfig
 
 	codeChan := make(chan string, 1)
 
 	// Create a TCP listener on 127.0.0.1 on a random unused port.
-	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	listener, err := lc.Listen(ctx, "tcp", "127.0.0.1:0")
 	if err != nil {
 		log.Fatalf("failed to start listener: %v", err)
 	}
@@ -329,12 +335,20 @@ func startLocalCallbackServer() (string, <-chan string) {
 		log.Fatalf("listener.Addr() was not a *net.TCPAddr")
 	}
 
-	redirectURI := fmt.Sprintf("http://127.0.0.1:%d", addr.Port)
+	redirectURI := fmt.Sprintf("http://127.0.0.1:%d/oauth/callback", addr.Port)
 
 	mux := http.NewServeMux()
 	server := &http.Server{Handler: mux, ReadHeaderTimeout: httpReadTimeout}
 
-	mux.HandleFunc("/", func(writer http.ResponseWriter, reader *http.Request) {
+	mux.HandleFunc("/oauth/callback", func(writer http.ResponseWriter, reader *http.Request) {
+		state := reader.URL.Query().Get("state")
+		if state != expectedState {
+			http.Error(writer, "State mismatch", http.StatusBadRequest)
+			log.Printf("State mismatch: expected %s, got %s", expectedState, state)
+
+			return
+		}
+
 		code := reader.URL.Query().Get("code")
 		if code != "" {
 			fmt.Fprintln(writer, "Login successful. You may now close this window.")
