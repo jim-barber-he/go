@@ -28,7 +28,7 @@ func TestGetNamespace(t *testing.T) {
 	}
 
 	// Get the namespace
-	ptr, err := GetNamespace(client, "test")
+	ptr, err := GetNamespace(context.Background(), client, "test")
 	if err != nil {
 		t.Fatalf("error getting namespace: %v", err)
 	}
@@ -58,7 +58,7 @@ func TestGetNode(t *testing.T) {
 	}
 
 	// Get the node
-	ptr, err := GetNode(client, "test")
+	ptr, err := GetNode(context.Background(), client, "test")
 	if err != nil {
 		t.Fatalf("error getting node: %v", err)
 	}

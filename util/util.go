@@ -61,45 +61,52 @@ func FormatAge(timestamp time.Time) string {
 	minutes = seconds / numSecondsPerMinute
 	seconds -= minutes * numSecondsPerMinute
 
-	var dateStr string
-	// When set to true, return as soon as the next non-zero time unit is set.
-	var retNext bool
+	// Pre-allocate buffer with reasonable capacity (max: "999w999d" = 8 chars)
+	var b strings.Builder
+	b.Grow(8)
+
+	unitsAdded := 0
 
 	if weeks > 0 {
-		dateStr = fmt.Sprintf("%dw", weeks)
-		retNext = true
+		b.WriteString(strconv.Itoa(weeks))
+		b.WriteByte('w')
+		unitsAdded++
 	}
 
 	if days > 0 {
-		dateStr = fmt.Sprintf("%s%dd", dateStr, days)
-		if retNext {
-			return dateStr
+		b.WriteString(strconv.Itoa(days))
+		b.WriteByte('d')
+		unitsAdded++
+		if unitsAdded == 2 {
+			return b.String()
 		}
-
-		retNext = true
 	}
 
 	if hours > 0 {
-		dateStr = fmt.Sprintf("%s%dh", dateStr, hours)
-		if retNext {
-			return dateStr
+		b.WriteString(strconv.Itoa(hours))
+		b.WriteByte('h')
+		unitsAdded++
+		if unitsAdded == 2 {
+			return b.String()
 		}
-
-		retNext = true
 	}
 
 	if minutes > 0 {
-		dateStr = fmt.Sprintf("%s%dm", dateStr, minutes)
-		if retNext {
-			return dateStr
+		b.WriteString(strconv.Itoa(minutes))
+		b.WriteByte('m')
+		unitsAdded++
+		if unitsAdded == 2 {
+			return b.String()
 		}
 	}
 
-	if retNext && seconds == 0 {
-		return dateStr
+	// Always include seconds if no other units or if it's the first/only unit
+	if unitsAdded == 0 || (unitsAdded == 1 && seconds > 0) {
+		b.WriteString(strconv.Itoa(seconds))
+		b.WriteByte('s')
 	}
 
-	return fmt.Sprintf("%s%ds", dateStr, seconds)
+	return b.String()
 }
 
 // GetEnv returns the value of an environment variable as a string.

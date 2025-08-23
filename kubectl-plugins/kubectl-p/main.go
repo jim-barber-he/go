@@ -7,6 +7,7 @@ package main
 
 import (
 	"cmp"
+	"context"
 	"errors"
 	"fmt"
 	"log"
@@ -118,7 +119,7 @@ func run(opts options) error {
 	clientset := k8s.Client(opts.kubeContext)
 
 	// Select the namespace to look at based on the command line options passed.
-	namespace, err := selectNamespace(clientset, opts)
+	namespace, err := selectNamespace(context.Background(), clientset, opts)
 	if err != nil {
 		return err
 	}
@@ -271,14 +272,14 @@ func fetchNodesAndPods(
 
 // selectNamespace returns the namespace to use based on the command line options.
 // An empty string means all namespaces.
-func selectNamespace(clientset *kubernetes.Clientset, opts options) (string, error) {
+func selectNamespace(ctx context.Context, clientset *kubernetes.Clientset, opts options) (string, error) {
 	if opts.allNamespaces {
 		return "", nil
 	}
 
 	if opts.namespace != "" {
 		// Verify that the supplied namespace is valid.
-		if _, err := k8s.GetNamespace(clientset, opts.namespace); err != nil {
+		if _, err := k8s.GetNamespace(ctx, clientset, opts.namespace); err != nil {
 			return "", fmt.Errorf("invalid namespace: %w", err)
 		}
 
