@@ -564,6 +564,7 @@ func writeCacheFile(cacheFilePath string, cacheFileData *ssoCacheData) error {
 	}
 
 	dir, _ := path.Split(cacheFilePath)
+
 	err = os.MkdirAll(dir, 0o700)
 	if err != nil {
 		return fmt.Errorf("%w: %w", NewCreateDirError(dir), err)

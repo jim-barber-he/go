@@ -18,6 +18,14 @@ lint lintall vet:
 	$(MAKE) -C texttable $@
 	$(MAKE) -C util $@
 
+test:
+	$(MAKE) -C aws $@
+	$(MAKE) -C k8s $@
+	$(MAKE) -C kubectl-plugins/kubectl-n $@
+	$(MAKE) -C kubectl-plugins/kubectl-p $@
+	$(MAKE) -C texttable $@
+	$(MAKE) -C util $@
+
 update:
 	go get go@latest
 	go get -u ./...

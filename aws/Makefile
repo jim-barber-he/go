@@ -8,5 +8,8 @@ lint:
 lintall:
 	golangci-lint run --default all --disable depguard,exhaustruct,wsl || true
 
+test:
+	go test
+
 vet:
 	go vet
