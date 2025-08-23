@@ -38,10 +38,7 @@ func newBriefAndJSONError(usage string) error {
 
 // newInvalidEnvError creates a new error for when an invalid environment is specified.
 func newInvalidEnvError(env string) error {
-	return &util.Error{
-		Msg:   "invalid environment: ",
-		Param: env,
-	}
+	return util.NewError("invalid environment", env)
 }
 
 // newInvalidTierError creates a new error for when an invalid SSM parameter store tier is specified.

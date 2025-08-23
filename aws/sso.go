@@ -94,7 +94,8 @@ func Login(ctx context.Context, details *LoginSessionDetails, clientName string)
 	cfg := loadConfig(ctx, details)
 
 	// Check if the AWS SSO session is valid.
-	if _, err := sts.NewFromConfig(cfg).GetCallerIdentity(ctx, &sts.GetCallerIdentityInput{}); err == nil {
+	_, err := sts.NewFromConfig(cfg).GetCallerIdentity(ctx, &sts.GetCallerIdentityInput{})
+	if err == nil {
 		// Session is valid.
 		return cfg
 	}
@@ -103,10 +104,12 @@ func Login(ctx context.Context, details *LoginSessionDetails, clientName string)
 	sharedConfig := checkSharedConfig(ctx, getSharedConfig(&cfg))
 
 	// Try to refresh token before full login.
-	if cachePath, err := getCacheFilePath(sharedConfig.SSOSessionName, sharedConfig.SSOSession.SSOStartURL); err == nil {
-		if cache, err := readCacheFile(cachePath); err == nil {
+	cachePath, err := getCacheFilePath(sharedConfig.SSOSessionName, sharedConfig.SSOSession.SSOStartURL)
+	if err == nil {
+		cache, err := readCacheFile(cachePath)
+		if err == nil {
 			if time.Now().UTC().After(cache.ExpiresAt) {
-				// Expired, try refresh
+				// Expired, try refresh.
 				if cache.RefreshToken != "" {
 					refreshed, err := refreshSSOToken(ctx, cache, cfg)
 					if err == nil {
@@ -123,14 +126,15 @@ func Login(ctx context.Context, details *LoginSessionDetails, clientName string)
 					}
 				}
 			} else {
-				// Still valid — skip login
+				// Still valid — skip login.
 				return cfg
 			}
 		}
 	}
 
 	// Session is not valid, so need to perform an AWS SSO login.
-	if err := ssoLogin(ctx, cfg, sharedConfig, clientName); err != nil {
+	err = ssoLogin(ctx, cfg, sharedConfig, clientName)
+	if err != nil {
 		log.Panicf("failed to perform AWS SSO login: %v", err)
 	}
 
@@ -201,7 +205,8 @@ func ssoLogin(ctx context.Context, cfg aws.Config, sharedConfig config.SharedCon
 		return fmt.Errorf("%w: %w", errGetCachePath, err)
 	}
 
-	if err := writeCacheFile(cacheFilePath, cacheData); err != nil {
+	err = writeCacheFile(cacheFilePath, cacheData)
+	if err != nil {
 		return fmt.Errorf("%w: %w", errWriteCacheFile, err)
 	}
 
@@ -252,7 +257,8 @@ func ssoLoginWithPKCE(
 
 	fmt.Fprintf(os.Stderr, "Opening browser for login. If it doesn't open, go to:\n%s\n", authURL)
 
-	if err := browser.OpenURL(authURL); err != nil {
+	err = browser.OpenURL(authURL)
+	if err != nil {
 		return nil, fmt.Errorf("%w: %w", errOpenBrowser, err)
 	}
 
@@ -360,14 +366,16 @@ func localCallbackServer(ctx context.Context, expectedState string) (string, <-c
 
 		// Close the server and log any error.
 		go func() {
-			if err := server.Close(); err != nil {
+			err := server.Close()
+			if err != nil {
 				log.Printf("error closing local callback server: %v", err)
 			}
 		}()
 	})
 
 	go func() {
-		if err := server.Serve(listener); err != nil {
+		err := server.Serve(listener)
+		if err != nil {
 			if !errors.Is(err, http.ErrServerClosed) {
 				log.Printf("error with local callback server: %v", err)
 			}
@@ -405,7 +413,8 @@ func ssoLoginWithDeviceAuthorization(
 	authURL := aws.ToString(deviceAuth.VerificationUriComplete)
 	fmt.Fprintf(os.Stderr, "If your browser doesn't open, then open the following URL:\n%s\n\n", authURL)
 
-	if err := browser.OpenURL(authURL); err != nil {
+	err = browser.OpenURL(authURL)
+	if err != nil {
 		return nil, fmt.Errorf("%w: %w", errOpenBrowser, err)
 	}
 
@@ -531,14 +540,16 @@ func getCacheFilePath(ssoSessionName, ssoStartURL string) (string, error) {
 // readCacheFile reads the contents of the valid credentials from a file containing the results of an AWS SSO login.
 // It is expected that the correct cache file path is passed in as retrieved via the getCacheFilePath() function.
 func readCacheFile(cacheFilePath string) (*ssoCacheData, error) {
-	data, err := os.ReadFile(cacheFilePath)
+	data, err := os.ReadFile(cacheFilePath) //nolint:gosec // G304: Potential file inclusion via variable.
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("%w: %w", errReadCacheFile, err)
 	}
 
 	var cache ssoCacheData
-	if err := json.Unmarshal(data, &cache); err != nil {
-		return nil, err
+
+	err = json.Unmarshal(data, &cache)
+	if err != nil {
+		return nil, fmt.Errorf("%w: %w", errUnmarshalCacheFile, err)
 	}
 
 	return &cache, nil
@@ -553,11 +564,13 @@ func writeCacheFile(cacheFilePath string, cacheFileData *ssoCacheData) error {
 	}
 
 	dir, _ := path.Split(cacheFilePath)
-	if err := os.MkdirAll(dir, 0o700); err != nil {
+	err = os.MkdirAll(dir, 0o700)
+	if err != nil {
 		return fmt.Errorf("%w: %w", NewCreateDirError(dir), err)
 	}
 
-	if err := os.WriteFile(cacheFilePath, marshaledJSON, 0o600); err != nil {
+	err = os.WriteFile(cacheFilePath, marshaledJSON, 0o600)
+	if err != nil {
 		return fmt.Errorf("%w: %w", NewWriteCacheFileError(cacheFilePath), err)
 	}
 

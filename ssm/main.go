@@ -15,7 +15,9 @@ func main() {
 	log.SetFlags(0)
 
 	ctx := context.Background()
-	if err := cmd.Execute(ctx); err != nil {
+
+	err := cmd.Execute(ctx)
+	if err != nil {
 		log.Fatalf("Error executing command: %v", err)
 	}
 }

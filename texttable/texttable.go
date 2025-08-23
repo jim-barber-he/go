@@ -102,7 +102,8 @@ func (t *Table[R]) Write(w ...io.Writer) {
 	}
 
 	// Display the table.
-	if err := tw.Flush(); err != nil {
+	err := tw.Flush()
+	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 	}
 }

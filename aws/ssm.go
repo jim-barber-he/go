@@ -63,7 +63,7 @@ func printJSON(param SSMParameter, hideValue bool) {
 	}
 
 	if err != nil {
-		fmt.Printf("Error converting SSMParameter copy to JSON: %v\n", err)
+		fmt.Printf("Error converting SSMParameter to JSON: %v\n", err)
 
 		return
 	}
@@ -232,8 +232,9 @@ func SSMGet(ctx context.Context, ssmClient *ssm.Client, name string, describe bo
 		})
 	}
 
-	if err := grp.Wait(); err != nil {
-		return SSMParameter{}, err
+	err := grp.Wait()
+	if err != nil {
+		return SSMParameter{}, fmt.Errorf("%w: %w", errGoRoutine, err)
 	}
 
 	return param, nil
@@ -283,7 +284,7 @@ func SSMList(ctx context.Context, ssmClient *ssm.Client, path string, recursive,
 	grp := new(errgroup.Group)
 
 	for idx := range params {
-		// Acquire a semaphore
+		// Acquire a semaphore.
 		ssmConcurrency <- struct{}{}
 
 		// Capture the current value of the loop variable.
@@ -292,7 +293,7 @@ func SSMList(ctx context.Context, ssmClient *ssm.Client, path string, recursive,
 		index := idx
 
 		grp.Go(func() error {
-			// Release the semaphore upon completion
+			// Release the semaphore upon completion.
 			defer func() { <-ssmConcurrency }()
 
 			var err error
@@ -316,8 +317,9 @@ func SSMList(ctx context.Context, ssmClient *ssm.Client, path string, recursive,
 		})
 	}
 
-	if err := grp.Wait(); err != nil {
-		return nil, err
+	err := grp.Wait()
+	if err != nil {
+		return nil, fmt.Errorf("%w: %w", errGoRoutine, err)
 	}
 
 	return result, nil
@@ -383,7 +385,7 @@ func SSMListSafeDecrypt(
 	grp := new(errgroup.Group)
 
 	for idx := range params {
-		// Acquire a semaphore
+		// Acquire a semaphore.
 		ssmConcurrency <- struct{}{}
 
 		// Capture the current value of the loop variable.
@@ -392,7 +394,7 @@ func SSMListSafeDecrypt(
 		index := idx
 
 		grp.Go(func() error {
-			// Release the semaphore upon completion
+			// Release the semaphore upon completion.
 			defer func() { <-ssmConcurrency }()
 
 			var err error
@@ -416,8 +418,9 @@ func SSMListSafeDecrypt(
 		})
 	}
 
-	if err := grp.Wait(); err != nil {
-		return nil, err
+	err := grp.Wait()
+	if err != nil {
+		return nil, fmt.Errorf("%w: %w", errGoRoutine, err)
 	}
 
 	return result, nil

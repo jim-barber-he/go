@@ -22,25 +22,6 @@ import (
 
 const tick = "\u2713"
 
-var goodStatuses = map[v1.NodeConditionType]v1.ConditionStatus{
-	"ContainerRuntimeUnhealthy":   "False",
-	"CorruptDockerOverlay2":       "False",
-	"CPUPressure":                 "False",
-	"DiskPressure":                "False",
-	"FrequentContainerdRestart":   "False",
-	"FrequentDockerRestart":       "False",
-	"FrequentKubeletRestart":      "False",
-	"FrequentUnregisterNetDevice": "False",
-	"KernelDeadlock":              "False",
-	"KubeletUnhealthy":            "False",
-	"MemoryPressure":              "False",
-	"NetworkUnavailable":          "False",
-	"OutOfDisk":                   "False",
-	"PIDPressure":                 "False",
-	"ReadonlyFilesystem":          "False",
-	"Ready":                       "True",
-}
-
 // tableRow represents a row in the output table.
 type tableRow struct {
 	Name          string `title:"NAME"`
@@ -171,7 +152,27 @@ func createTableRow(node *v1.Node, wide bool) tableRow {
 
 // getNodeStatus looks at the conditions of a node and returns the node's status and any associated warning messages.
 func getNodeStatus(conditions []v1.NodeCondition) (string, []string) {
-	var messages []string
+	var (
+		goodStatuses = map[v1.NodeConditionType]v1.ConditionStatus{
+			"ContainerRuntimeUnhealthy":   "False",
+			"CorruptDockerOverlay2":       "False",
+			"CPUPressure":                 "False",
+			"DiskPressure":                "False",
+			"FrequentContainerdRestart":   "False",
+			"FrequentDockerRestart":       "False",
+			"FrequentKubeletRestart":      "False",
+			"FrequentUnregisterNetDevice": "False",
+			"KernelDeadlock":              "False",
+			"KubeletUnhealthy":            "False",
+			"MemoryPressure":              "False",
+			"NetworkUnavailable":          "False",
+			"OutOfDisk":                   "False",
+			"PIDPressure":                 "False",
+			"ReadonlyFilesystem":          "False",
+			"Ready":                       "True",
+		}
+		messages []string
+	)
 
 	status := tick
 

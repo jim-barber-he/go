@@ -18,7 +18,7 @@ lint lintall vet:
 	$(MAKE) -C texttable $@
 	$(MAKE) -C util $@
 
-modules:
+update:
 	go get go@latest
 	go get -u ./...
 	go mod tidy
