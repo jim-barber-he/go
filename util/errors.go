@@ -13,10 +13,22 @@ type Error struct {
 
 // Error implements the Error interface.
 func (e *Error) Error() string {
-	return fmt.Sprintf("%s%s", e.Msg, e.Param)
+	return fmt.Sprintf("%s: %s", e.Msg, e.Param)
 }
 
+// NewError creates a new Error with the given message and parameter.
+func NewError(msg, param string) *Error {
+	return &Error{Msg: msg, Param: param}
+}
+
+// Exported error constants for better reusability
 var (
-	errCommandTimedOut = errors.New("command timed out")
-	errTerminalSize    = errors.New("failed to get terminal size")
+	ErrCommandTimedOut = errors.New("command timed out")
+	ErrTerminalSize    = errors.New("failed to get terminal size")
+)
+
+// Keep legacy unexported versions for backward compatibility
+var (
+	errCommandTimedOut = ErrCommandTimedOut
+	errTerminalSize    = ErrTerminalSize
 )

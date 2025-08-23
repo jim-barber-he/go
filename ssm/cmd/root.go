@@ -6,7 +6,6 @@ package cmd
 import (
 	"context"
 	"fmt"
-	"os"
 	"regexp"
 	"strings"
 
@@ -15,6 +14,34 @@ import (
 	"github.com/jim-barber-he/go/aws"
 	"github.com/jim-barber-he/go/util"
 	"github.com/spf13/cobra"
+)
+
+// Environment constants
+const (
+	EnvDev      = "dev"
+	EnvProdBase = "prod"
+	EnvTestBase = "test"
+)
+
+// AWS Profile constants
+const (
+	AWSProfileTest = "hetest"
+	AWSProfileProd = "heaws"
+)
+
+// AWS Region environment variable constants
+const (
+	AWSRegionEnvVar        = "AWS_REGION"
+	AWSDefaultRegionEnvVar = "AWS_DEFAULT_REGION"
+	DefaultRegion          = "ap-southeast-2"
+)
+
+// SSM Path constants
+const (
+	SSMPathPrefix     = "/"
+	HelmPathDev       = "/helm/minikube/"
+	HelmPathTestBase  = "/helm/test"
+	HelmPathProdBase  = "/helm/prod"
 )
 
 // Commandline options.
@@ -97,12 +124,12 @@ func getAWSProfile(environment string) string {
 
 	// Determine the AWS profile based on the environment.
 	switch {
-	case environment == "dev":
-		return "hetest"
-	case strings.HasPrefix(environment, "prod"):
-		return "heaws"
-	case strings.HasPrefix(environment, "test"):
-		return "hetest"
+	case environment == EnvDev:
+		return AWSProfileTest
+	case strings.HasPrefix(environment, EnvProdBase):
+		return AWSProfileProd
+	case strings.HasPrefix(environment, EnvTestBase):
+		return AWSProfileTest
 	default:
 		// For anything else set the AWS profile to the name of the environment.
 		return environment
@@ -111,14 +138,13 @@ func getAWSProfile(environment string) string {
 
 // getDefaultRegion determines the default AWS region based on environment variables.
 func getDefaultRegion() string {
-	switch {
-	case os.Getenv("AWS_REGION") != "":
-		return os.Getenv("AWS_REGION")
-	case os.Getenv("AWS_DEFAULT_REGION") != "":
-		return os.Getenv("AWS_DEFAULT_REGION")
-	default:
-		return "ap-southeast-2"
+	if region := util.GetEnv(AWSRegionEnvVar, ""); region != "" {
+		return region
 	}
+	if region := util.GetEnv(AWSDefaultRegionEnvVar, ""); region != "" {
+		return region
+	}
+	return DefaultRegion
 }
 
 // getSSMClient returns an SSM client based on the provided environment name.
@@ -134,24 +160,28 @@ func getSSMClient(ctx context.Context, environment string) *ssm.Client {
 // The results of these are based on rules used at my workplace.
 func getSSMPath(environment, path string) string {
 	// Return fully qualified paths unmodified.
-	if strings.HasPrefix(path, "/") {
+	if strings.HasPrefix(path, SSMPathPrefix) {
 		return path
 	}
 
-	// dev parameters at my workplace are under the /helm/minikube/ SSM parameter store path.
-	if environment == "dev" {
-		environment = "minikube"
-	}
-	// Absolute SSM paths are returned exactly as passed in.
-	// Otherwise SSM paths are formatted to suit my workplace,
-	// where they are converted to be lowercase, and have a path prefix added based on the environment.
-	if path == "" {
-		path = "/helm/" + environment
-	} else {
-		path = fmt.Sprintf("/helm/%s/%s", environment, strings.ToLower(path))
+	var basePath string
+	switch {
+	case environment == EnvDev:
+		basePath = HelmPathDev
+	case strings.HasPrefix(environment, EnvTestBase):
+		basePath = HelmPathTestBase + environment + SSMPathPrefix
+	case strings.HasPrefix(environment, EnvProdBase):
+		basePath = HelmPathProdBase + environment + SSMPathPrefix
+	default:
+		basePath = "/helm/" + environment + SSMPathPrefix
 	}
 
-	return path
+	if path == "" {
+		// Remove trailing slash for directory listing
+		return strings.TrimSuffix(basePath, SSMPathPrefix)
+	}
+
+	return basePath + strings.ToLower(path)
 }
 
 // getTerminalWidth retrieves the terminal width, defaulting to 80 if an error occurs.

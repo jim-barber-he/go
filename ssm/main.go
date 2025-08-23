@@ -16,6 +16,6 @@ func main() {
 
 	ctx := context.Background()
 	if err := cmd.Execute(ctx); err != nil {
-		log.Fatalf("Error executing command: %v", err)
+		log.Fatalf("Error executing SSM command: %v", err)
 	}
 }

@@ -7,6 +7,7 @@ package main
 
 import (
 	"cmp"
+	"context"
 	"errors"
 	"fmt"
 	"log"
@@ -278,7 +279,7 @@ func selectNamespace(clientset *kubernetes.Clientset, opts options) (string, err
 
 	if opts.namespace != "" {
 		// Verify that the supplied namespace is valid.
-		if _, err := k8s.GetNamespace(clientset, opts.namespace); err != nil {
+		if _, err := k8s.GetNamespace(context.Background(), clientset, opts.namespace); err != nil {
 			return "", fmt.Errorf("invalid namespace: %w", err)
 		}
 

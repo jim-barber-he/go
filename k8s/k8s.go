@@ -26,10 +26,7 @@ var (
 )
 
 func newContextNotFoundError(context string) error {
-	return &util.Error{
-		Msg:   "context ",
-		Param: context + " not found in kubeconfig",
-	}
+	return util.NewError("context not found in kubeconfig", context)
 }
 
 // buildConfigFromFlags creates a Kubernetes client configuration from the provided kubeconfig path and context.
@@ -60,22 +57,20 @@ func Client(kubeContext string) *kubernetes.Clientset {
 }
 
 // GetNamespace returns a namespace.
-func GetNamespace(client kubernetes.Interface, name string) (*v1.Namespace, error) {
-	ptr, err := client.CoreV1().Namespaces().Get(context.Background(), name, metav1.GetOptions{})
+func GetNamespace(ctx context.Context, client kubernetes.Interface, name string) (*v1.Namespace, error) {
+	ptr, err := client.CoreV1().Namespaces().Get(ctx, name, metav1.GetOptions{})
 	if err != nil {
-		err = fmt.Errorf("%w: %w", errGettingNamespace, err)
-
-		return nil, err
+		return nil, fmt.Errorf("%w %s: %w", errGettingNamespace, name, err)
 	}
 
 	return ptr, nil
 }
 
 // GetNode returns a node.
-func GetNode(client kubernetes.Interface, name string) (*v1.Node, error) {
-	ptr, err := client.CoreV1().Nodes().Get(context.Background(), name, metav1.GetOptions{})
+func GetNode(ctx context.Context, client kubernetes.Interface, name string) (*v1.Node, error) {
+	ptr, err := client.CoreV1().Nodes().Get(ctx, name, metav1.GetOptions{})
 	if err != nil {
-		return nil, fmt.Errorf("%w: %w", errGettingNode, err)
+		return nil, fmt.Errorf("%w %s: %w", errGettingNode, name, err)
 	}
 
 	return ptr, nil

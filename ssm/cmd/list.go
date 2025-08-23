@@ -103,33 +103,47 @@ func listCompletionHelp(args []string) ([]string, cobra.ShellCompDirective) {
 
 // validateListOptions validates the list command options.
 func validateListOptions(cmd *cobra.Command) error {
-	if listOpts.brief && listOpts.full {
-		return newBriefAndFullError(cmd.UsageString())
+	mutuallyExclusiveFlags := 0
+	
+	if listOpts.brief {
+		mutuallyExclusiveFlags++
 	}
-
-	if listOpts.brief && listOpts.json {
-		return newBriefAndJSONError(cmd.UsageString())
+	if listOpts.full {
+		mutuallyExclusiveFlags++
+	}
+	if listOpts.json {
+		mutuallyExclusiveFlags++
+	}
+	
+	if mutuallyExclusiveFlags > 1 {
+		return fmt.Errorf("only one of --brief, --full, or --json flags can be used at a time\n\n%s", cmd.UsageString())
 	}
 
 	return nil
 }
 
 // doList will list the SSM Parameter Store parameters below the specified path.
-// args[0] is the name of to AWS Profile to use when accessing the SSM parameter store.
-// args[1] is the path of the SSM parameter to list.
+// args[0] is the name of the AWS environment to use when accessing the SSM parameter store.
+// args[1] is the path of the SSM parameter to list (optional).
 func doList(ctx context.Context, args []string) error {
-	ssmClient := getSSMClient(ctx, args[0])
+	environment := args[0]
+	ssmClient := getSSMClient(ctx, environment)
 
 	var path string
 	if len(args) > 1 {
-		path = getSSMPath(args[0], args[1])
+		path = getSSMPath(environment, args[1])
 	} else {
-		path = getSSMPath(args[0], "")
+		path = getSSMPath(environment, "")
 	}
 
 	params, err := listParameters(ctx, ssmClient, path)
 	if err != nil {
-		return fmt.Errorf("%w: %w", errListSSMParameters, err)
+		return fmt.Errorf("failed to list SSM parameters in environment %q at path %q: %w", environment, path, err)
+	}
+
+	if len(params) == 0 {
+		fmt.Printf("No parameters found at path: %s\n", path)
+		return nil
 	}
 
 	displayListParameters(params)
@@ -139,12 +153,18 @@ func doList(ctx context.Context, args []string) error {
 
 // displayListParameters displays the list of SSM parameters formatted according to the command line flags.
 func displayListParameters(params []aws.SSMParameter) {
-	// Sort function to sort the parameters by Name when iterating through them.
+	if len(params) == 0 {
+		return
+	}
+
+	// Sort parameters by name for consistent output
 	slices.SortFunc(params, func(a, b aws.SSMParameter) int {
 		return cmp.Compare(a.Name, b.Name)
 	})
 
-	numParams := len(params) - 1
+	// Pre-calculate loop variables for better performance
+	lastIdx := len(params) - 1
+	
 	for idx, param := range params {
 		switch {
 		case listOpts.brief:
@@ -155,7 +175,8 @@ func displayListParameters(params []aws.SSMParameter) {
 			displayDefault(param)
 		}
 
-		if idx < numParams && !listOpts.brief && !listOpts.json {
+		// Add separator between parameters (except for the last one)
+		if idx < lastIdx && !listOpts.brief && !listOpts.json {
 			fmt.Println()
 		}
 	}

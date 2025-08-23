@@ -41,23 +41,24 @@ func (t *Table[R]) Write(w ...io.Writer) {
 	fields := reflect.VisibleFields(val.Type())
 	numFields := len(fields)
 
-	// Create a slice to determine which fields to omit from the output.
-	// Initially any struct field with the `omitempty` tag is set to true to be omitted.
+	// Pre-allocate slices with known capacity for better performance
 	omit := make([]bool, numFields)
 
+	// Pre-analyze tags to avoid repeated string splits
+	titleTags := make([][]string, numFields)
 	for i, sf := range fields {
-		titleArray := strings.Split(sf.Tag.Get("title"), ",")
-		if len(titleArray) > 1 && titleArray[1] == "omitempty" {
+		titleTags[i] = strings.Split(sf.Tag.Get("title"), ",")
+		if len(titleTags[i]) > 1 && titleTags[i][1] == "omitempty" {
 			omit[i] = true
 		}
 	}
+
 	// For any field set to be omitted, don't omit it if it has a value set in any of its rows.
 	for i := range omit {
 		if omit[i] {
 			for _, row := range t.Rows {
 				if reflect.ValueOf(row).Elem().Field(i).String() != "" {
 					omit[i] = false
-
 					break
 				}
 			}
@@ -72,22 +73,30 @@ func (t *Table[R]) Write(w ...io.Writer) {
 		tw = tabwriter.NewWriter(os.Stdout, tableMinWidth, tableTabWidth, tablePadding, tablePadChar, tableFlags)
 	}
 
-	// Add the title row of the table skipping any `omitempty` columns where all its values are empty.
-	var s []string
+	// Count visible columns and pre-allocate string slice
+	visibleCols := 0
+	for i := range numFields {
+		if !omit[i] {
+			visibleCols++
+		}
+	}
+	
+	// Pre-allocate string slice with known capacity to reduce allocations
+	s := make([]string, 0, visibleCols)
 
-	for i, sf := range fields {
+	// Add the title row of the table skipping any `omitempty` columns where all its values are empty.
+	for i := range numFields {
 		if omit[i] {
 			continue
 		}
-
-		s = append(s, strings.Split(sf.Tag.Get("title"), ",")[0])
+		s = append(s, titleTags[i][0])
 	}
 
 	fmt.Fprintln(tw, strings.Join(s, "\t"))
 
 	// Add the table rows skipping any `omitempty` columns where all its values are empty.
 	for _, row := range t.Rows {
-		s = nil
+		s = s[:0] // Reset slice but keep capacity
 		val = reflect.ValueOf(row).Elem()
 
 		for i := range numFields {

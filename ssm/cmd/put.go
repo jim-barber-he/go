@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"slices"
@@ -113,17 +114,32 @@ func putCompletionHelp(args []string) ([]string, cobra.ShellCompDirective) {
 
 // validatePutOptions validates the command line options for the put command.
 func validatePutOptions() error {
+	// Validate data type
 	switch putOpts.dataType {
 	case "", "text", "aws:ec2:image", "aws:ssm:integration":
-		// Valid, do nothing.
+		// Valid data types, continue validation
 	default:
-		return errInvalidDataType
+		return fmt.Errorf("invalid data-type %q: must be one of: text, aws:ec2:image, or aws:ssm:integration", putOpts.dataType)
 	}
 
-	// TODO: Validate --keyID here by checking if it exists?
+	// Validate KMS key ID format if secure string is used
+	if putOpts.secure && putOpts.keyID == "" {
+		return errors.New("key-id is required when using --secure flag")
+	}
 
-	if putOpts.tier != "" && !slices.Contains(types.ParameterTier("").Values(), types.ParameterTier(putOpts.tier)) {
-		return newInvalidTierError()
+	// Validate tier
+	if putOpts.tier != "" {
+		validTiers := types.ParameterTier("").Values()
+		if !slices.Contains(validTiers, types.ParameterTier(putOpts.tier)) {
+			return fmt.Errorf("invalid tier %q: must be one of: %v", putOpts.tier, validTiers)
+		}
+	}
+
+	// Validate that either file or value is provided, but not both
+	if putOpts.file != "" {
+		if _, err := os.Stat(putOpts.file); os.IsNotExist(err) {
+			return fmt.Errorf("file %q does not exist", putOpts.file)
+		}
 	}
 
 	return nil

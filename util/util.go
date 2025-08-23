@@ -61,45 +61,53 @@ func FormatAge(timestamp time.Time) string {
 	minutes = seconds / numSecondsPerMinute
 	seconds -= minutes * numSecondsPerMinute
 
-	var dateStr string
-	// When set to true, return as soon as the next non-zero time unit is set.
-	var retNext bool
+	// Use strings.Builder for efficient string building
+	// Pre-allocate capacity to avoid reallocations (estimated max: "99w99d" = 6 chars)
+	var builder strings.Builder
+	builder.Grow(8)
+	
+	unitsAdded := 0
 
 	if weeks > 0 {
-		dateStr = fmt.Sprintf("%dw", weeks)
-		retNext = true
+		builder.WriteString(strconv.Itoa(weeks))
+		builder.WriteByte('w')
+		unitsAdded++
 	}
 
 	if days > 0 {
-		dateStr = fmt.Sprintf("%s%dd", dateStr, days)
-		if retNext {
-			return dateStr
+		builder.WriteString(strconv.Itoa(days))
+		builder.WriteByte('d')
+		unitsAdded++
+		if unitsAdded >= 2 {
+			return builder.String()
 		}
-
-		retNext = true
 	}
 
 	if hours > 0 {
-		dateStr = fmt.Sprintf("%s%dh", dateStr, hours)
-		if retNext {
-			return dateStr
+		builder.WriteString(strconv.Itoa(hours))
+		builder.WriteByte('h')
+		unitsAdded++
+		if unitsAdded >= 2 {
+			return builder.String()
 		}
-
-		retNext = true
 	}
 
 	if minutes > 0 {
-		dateStr = fmt.Sprintf("%s%dm", dateStr, minutes)
-		if retNext {
-			return dateStr
+		builder.WriteString(strconv.Itoa(minutes))
+		builder.WriteByte('m')
+		unitsAdded++
+		if unitsAdded >= 2 {
+			return builder.String()
 		}
 	}
 
-	if retNext && seconds == 0 {
-		return dateStr
+	// Only add seconds if we haven't reached 2 units yet, or if no other units were added
+	if unitsAdded < 2 && (unitsAdded == 0 || seconds > 0) {
+		builder.WriteString(strconv.Itoa(seconds))
+		builder.WriteByte('s')
 	}
 
-	return fmt.Sprintf("%s%ds", dateStr, seconds)
+	return builder.String()
 }
 
 // GetEnv returns the value of an environment variable as a string.

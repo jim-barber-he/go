@@ -14,7 +14,6 @@ import (
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/ssm"
 	"github.com/aws/aws-sdk-go-v2/service/ssm/types"
-	"github.com/jim-barber-he/go/util"
 	"golang.org/x/sync/errgroup"
 )
 
@@ -57,13 +56,31 @@ func printJSON(param SSMParameter, hideValue bool) {
 	)
 
 	if hideValue {
-		jsonData, err = util.MarshalWithoutFields(param, "value")
+		// Create a copy of the parameter without the value field for better performance
+		// This eliminates the need for reflection-based field exclusion
+		paramCopy := SSMParameter{
+			AllowedPattern:   param.AllowedPattern,
+			ARN:              param.ARN,
+			DataType:         param.DataType,
+			Description:      param.Description,
+			Error:            param.Error,
+			KeyID:            param.KeyID,
+			LastModifiedDate: param.LastModifiedDate,
+			LastModifiedUser: param.LastModifiedUser,
+			Name:             param.Name,
+			Policies:         param.Policies,
+			Tier:             param.Tier,
+			Type:             param.Type,
+			Version:          param.Version,
+			// Value is intentionally omitted
+		}
+		jsonData, err = json.Marshal(paramCopy)
 	} else {
 		jsonData, err = json.Marshal(param)
 	}
 
 	if err != nil {
-		fmt.Printf("Error converting SSMParameter copy to JSON: %v\n", err)
+		fmt.Printf("Error converting SSMParameter to JSON: %v\n", err)
 
 		return
 	}
