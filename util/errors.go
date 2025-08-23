@@ -11,9 +11,14 @@ type Error struct {
 	Param string
 }
 
+// NewError creates a new Error with the given message and parameter.
+func NewError(msg, param string) *Error {
+	return &Error{Msg: msg, Param: param}
+}
+
 // Error implements the Error interface.
 func (e *Error) Error() string {
-	return fmt.Sprintf("%s%s", e.Msg, e.Param)
+	return fmt.Sprintf("%s: %s", e.Msg, e.Param)
 }
 
 var (

@@ -43,63 +43,76 @@ func DisplayVersion(app string) {
 // or just the seconds if no higher time unit was above 0.
 // This differs from duration.String() in that it also handles weeks and days.
 func FormatAge(timestamp time.Time) string {
-	var weeks, days, hours, minutes, seconds int
+	const maxDateStrLen = 8
+
+	var dateStr strings.Builder
+	// Pre-allocate enough space for the string to avoid reallocations.
+	dateStr.Grow(maxDateStrLen)
 
 	duration := time.Since(timestamp).Round(time.Second)
+	seconds := int(duration.Seconds())
 
-	seconds = int(duration.Seconds())
-
-	weeks = seconds / numSecondsPerWeek
+	weeks := seconds / numSecondsPerWeek
 	seconds -= weeks * numSecondsPerWeek
 
-	days = seconds / numSecondsPerDay
+	days := seconds / numSecondsPerDay
 	seconds -= days * numSecondsPerDay
 
-	hours = seconds / numSecondsPerHour
+	hours := seconds / numSecondsPerHour
 	seconds -= hours * numSecondsPerHour
 
-	minutes = seconds / numSecondsPerMinute
+	minutes := seconds / numSecondsPerMinute
 	seconds -= minutes * numSecondsPerMinute
 
-	var dateStr string
 	// When set to true, return as soon as the next non-zero time unit is set.
 	var retNext bool
 
 	if weeks > 0 {
-		dateStr = fmt.Sprintf("%dw", weeks)
+		dateStr.WriteString(strconv.Itoa(weeks))
+		dateStr.WriteByte('w')
+
 		retNext = true
 	}
 
 	if days > 0 {
-		dateStr = fmt.Sprintf("%s%dd", dateStr, days)
+		dateStr.WriteString(strconv.Itoa(days))
+		dateStr.WriteByte('d')
+
 		if retNext {
-			return dateStr
+			return dateStr.String()
 		}
 
 		retNext = true
 	}
 
 	if hours > 0 {
-		dateStr = fmt.Sprintf("%s%dh", dateStr, hours)
+		dateStr.WriteString(strconv.Itoa(hours))
+		dateStr.WriteByte('h')
+
 		if retNext {
-			return dateStr
+			return dateStr.String()
 		}
 
 		retNext = true
 	}
 
 	if minutes > 0 {
-		dateStr = fmt.Sprintf("%s%dm", dateStr, minutes)
+		dateStr.WriteString(strconv.Itoa(minutes))
+		dateStr.WriteByte('m')
+
 		if retNext {
-			return dateStr
+			return dateStr.String()
 		}
 	}
 
 	if retNext && seconds == 0 {
-		return dateStr
+		return dateStr.String()
 	}
 
-	return fmt.Sprintf("%s%ds", dateStr, seconds)
+	dateStr.WriteString(strconv.Itoa(seconds))
+	dateStr.WriteByte('s')
+
+	return dateStr.String()
 }
 
 // GetEnv returns the value of an environment variable as a string.
@@ -116,7 +129,8 @@ func GetEnv(envVar, defaultValue string) string {
 // If the value is not set, then the supplied default value will be returned instead.
 func GetEnvBool(envVar string, defaultValue bool) bool {
 	if val, exists := os.LookupEnv(envVar); exists {
-		if ret, err := strconv.ParseBool(val); err == nil {
+		ret, err := strconv.ParseBool(val)
+		if err == nil {
 			return ret
 		}
 	}
@@ -128,7 +142,8 @@ func GetEnvBool(envVar string, defaultValue bool) bool {
 // If the value is not set, then the supplied default value will be returned instead.
 func GetEnvInt(envVar string, defaultValue int) int {
 	if val, exists := os.LookupEnv(envVar); exists {
-		if ret, err := strconv.Atoi(val); err == nil {
+		ret, err := strconv.Atoi(val)
+		if err == nil {
 			return ret
 		}
 	}
@@ -150,12 +165,14 @@ func LastSplitItem(str, splitChar string) string {
 func MarshalWithFields(v any, fields ...string) ([]byte, error) {
 	rawJSON, err := json.Marshal(v)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("%w", err)
 	}
 
 	var m map[string]any
-	if err := json.Unmarshal(rawJSON, &m); err != nil {
-		return nil, err
+
+	err = json.Unmarshal(rawJSON, &m)
+	if err != nil {
+		return nil, fmt.Errorf("%w", err)
 	}
 
 	// Create a new map with only the fields we want to keep.
@@ -164,19 +181,28 @@ func MarshalWithFields(v any, fields ...string) ([]byte, error) {
 		filteredMap[field] = m[field]
 	}
 
-	return json.Marshal(filteredMap)
+	var bytes []byte
+
+	bytes, err = json.Marshal(filteredMap)
+	if err != nil {
+		return bytes, fmt.Errorf("%w", err)
+	}
+
+	return bytes, nil
 }
 
 // MarshalWithoutFields marshals a struct to JSON omitting one or more fields.
 func MarshalWithoutFields(v any, omitFields ...string) ([]byte, error) {
 	rawJSON, err := json.Marshal(v)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("%w", err)
 	}
 
 	var m map[string]any
-	if err := json.Unmarshal(rawJSON, &m); err != nil {
-		return nil, err
+
+	err = json.Unmarshal(rawJSON, &m)
+	if err != nil {
+		return nil, fmt.Errorf("%w", err)
 	}
 
 	// Remove the fields we want to omit.
@@ -184,7 +210,14 @@ func MarshalWithoutFields(v any, omitFields ...string) ([]byte, error) {
 		delete(m, field)
 	}
 
-	return json.Marshal(m)
+	var bytes []byte
+
+	bytes, err = json.Marshal(m)
+	if err != nil {
+		return bytes, fmt.Errorf("%w", err)
+	}
+
+	return bytes, nil
 }
 
 // RunWithTimeout executes a command with a timeout.
@@ -206,7 +239,8 @@ func RunWithTimeout(timeout int, command string, args ...string) (int, error) {
 
 	err := process.Run()
 	if errors.Is(ctx.Err(), context.DeadlineExceeded) {
-		if err := syscall.Kill(-process.Process.Pid, syscall.SIGKILL); err != nil {
+		err := syscall.Kill(-process.Process.Pid, syscall.SIGKILL)
+		if err != nil {
 			log.Println("Failed to kill process:", err)
 		}
 

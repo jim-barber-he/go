@@ -12,7 +12,7 @@ package main
 
 import (
 	"context"
-	"crypto/md5"
+	"crypto/md5" //nolint:gosec // We are using this to generate a hash for a redis key name, not for security.
 	"crypto/tls"
 	"encoding/hex"
 	"errors"
@@ -73,10 +73,7 @@ const (
 )
 
 func newRedisPingError(response string) error {
-	return &util.Error{
-		Msg:   "could not ping Redis: ",
-		Param: response,
-	}
+	return util.NewError("could not ping Redis", response)
 }
 
 // getRedisKey returns the name of the Redis key to use for the lock.
@@ -84,7 +81,7 @@ func newRedisPingError(response string) error {
 func getRedisKey(lockPrefix, command string) string {
 	redisKey := os.Getenv(envLockKey)
 	if redisKey == "" {
-		hash := md5.Sum([]byte(command))
+		hash := md5.Sum([]byte(command)) //nolint:gosec // Hash for a redis key name, not for security.
 		redisKey = hex.EncodeToString(hash[:])
 	}
 
@@ -176,7 +173,8 @@ func run() int {
 	}
 
 	defer func() {
-		if err := rdb.Close(); err != nil {
+		err := rdb.Close()
+		if err != nil {
 			slog.Error(err.Error())
 		}
 	}()

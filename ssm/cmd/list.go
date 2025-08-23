@@ -115,7 +115,7 @@ func validateListOptions(cmd *cobra.Command) error {
 }
 
 // doList will list the SSM Parameter Store parameters below the specified path.
-// args[0] is the name of to AWS Profile to use when accessing the SSM parameter store.
+// args[0] is the name of the AWS Profile to use when accessing the SSM parameter store.
 // args[1] is the path of the SSM parameter to list.
 func doList(ctx context.Context, args []string) error {
 	ssmClient := getSSMClient(ctx, args[0])
@@ -139,6 +139,10 @@ func doList(ctx context.Context, args []string) error {
 
 // displayListParameters displays the list of SSM parameters formatted according to the command line flags.
 func displayListParameters(params []aws.SSMParameter) {
+	if len(params) == 0 {
+		return
+	}
+
 	// Sort function to sort the parameters by Name when iterating through them.
 	slices.SortFunc(params, func(a, b aws.SSMParameter) int {
 		return cmp.Compare(a.Name, b.Name)
@@ -217,8 +221,18 @@ func displayDefaultText(param aws.SSMParameter) {
 // listParameters fetches the SSM parameters handling how decryption is performed based on the safeDecrypt flag.
 func listParameters(ctx context.Context, ssmClient *ssm.Client, path string) ([]aws.SSMParameter, error) {
 	if listOpts.safeDecrypt {
-		return aws.SSMListSafeDecrypt(ctx, ssmClient, path, listOpts.recursive, listOpts.full)
+		params, err := aws.SSMListSafeDecrypt(ctx, ssmClient, path, listOpts.recursive, listOpts.full)
+		if err != nil {
+			return nil, fmt.Errorf("%w", err)
+		}
+
+		return params, nil
 	}
 
-	return aws.SSMList(ctx, ssmClient, path, listOpts.recursive, listOpts.full)
+	params, err := aws.SSMList(ctx, ssmClient, path, listOpts.recursive, listOpts.full)
+	if err != nil {
+		return nil, fmt.Errorf("%w", err)
+	}
+
+	return params, nil
 }

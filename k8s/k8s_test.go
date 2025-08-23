@@ -9,16 +9,27 @@ import (
 	"k8s.io/client-go/kubernetes/fake"
 )
 
+const (
+	// TestNamespace is the namespace used for testing.
+	TestNamespace = "test"
+
+	// TestNodeName is the name of the node used for testing.
+	TestNodeName = "test-node"
+
+	// TestPodName is the name of the pod used for testing.
+	TestPodName = "test-pod"
+)
+
 func TestGetNamespace(t *testing.T) {
 	t.Parallel()
 
-	// Create a fake client
+	// Create a fake client.
 	client := fake.NewSimpleClientset()
 
-	// Create a fake namespace
+	// Create a fake namespace.
 	ns := &v1.Namespace{
 		ObjectMeta: metav1.ObjectMeta{
-			Name: "test",
+			Name: TestNamespace,
 		},
 	}
 
@@ -27,14 +38,14 @@ func TestGetNamespace(t *testing.T) {
 		t.Fatalf("error creating namespace: %v", err)
 	}
 
-	// Get the namespace
-	ptr, err := GetNamespace(client, "test")
+	// Get the namespace.
+	ptr, err := GetNamespace(context.Background(), client, TestNamespace)
 	if err != nil {
 		t.Fatalf("error getting namespace: %v", err)
 	}
 
-	// Verify the namespace
-	if ptr.Name != "test" {
+	// Verify the namespace.
+	if ptr.Name != TestNamespace {
 		t.Fatalf("expected namespace name to be 'test', got '%s'", ptr.Name)
 	}
 }
@@ -42,13 +53,13 @@ func TestGetNamespace(t *testing.T) {
 func TestGetNode(t *testing.T) {
 	t.Parallel()
 
-	// Create a fake client
+	// Create a fake client.
 	client := fake.NewSimpleClientset()
 
-	// Create a fake node
+	// Create a fake node.
 	node := &v1.Node{
 		ObjectMeta: metav1.ObjectMeta{
-			Name: "test",
+			Name: TestNodeName,
 		},
 	}
 
@@ -57,22 +68,22 @@ func TestGetNode(t *testing.T) {
 		t.Fatalf("error creating node: %v", err)
 	}
 
-	// Get the node
-	ptr, err := GetNode(client, "test")
+	// Get the node.
+	ptr, err := GetNode(context.Background(), client, TestNodeName)
 	if err != nil {
 		t.Fatalf("error getting node: %v", err)
 	}
 
-	// Verify the node
-	if ptr.Name != "test" {
-		t.Fatalf("expected node name to be 'test', got '%s'", ptr.Name)
+	// Verify the node.
+	if ptr.Name != TestNodeName {
+		t.Fatalf("expected node name to be '%s', got '%s'", TestNodeName, ptr.Name)
 	}
 }
 
 func TestHasPodReadyCondition(t *testing.T) {
 	t.Parallel()
 
-	// Create a fake pod with a ready condition
+	// Create a fake pod with a ready condition.
 	podReady := &v1.Pod{
 		Status: v1.PodStatus{
 			Conditions: []v1.PodCondition{
@@ -84,7 +95,7 @@ func TestHasPodReadyCondition(t *testing.T) {
 		},
 	}
 
-	// Create a fake pod with a not ready condition
+	// Create a fake pod with a not ready condition.
 	podNotReady := &v1.Pod{
 		Status: v1.PodStatus{
 			Conditions: []v1.PodCondition{
@@ -96,12 +107,12 @@ func TestHasPodReadyCondition(t *testing.T) {
 		},
 	}
 
-	// Verify the pod has a ready condition
+	// Verify the pod has a ready condition.
 	if !hasPodReadyCondition(podReady.Status.Conditions) {
 		t.Fatalf("expected pod to have a ready condition")
 	}
 
-	// Verify the pod does not have a ready condition
+	// Verify the pod does not have a ready condition.
 	if hasPodReadyCondition(podNotReady.Status.Conditions) {
 		t.Fatalf("expected pod to have a not ready condition")
 	}
@@ -110,7 +121,7 @@ func TestHasPodReadyCondition(t *testing.T) {
 func TestIsPodInitializedConditionTrue(t *testing.T) {
 	t.Parallel()
 
-	// Create a fake pod with an initialized condition
+	// Create a fake pod with an initialized condition.
 	podInitialized := &v1.Pod{
 		Status: v1.PodStatus{
 			Conditions: []v1.PodCondition{
@@ -122,7 +133,7 @@ func TestIsPodInitializedConditionTrue(t *testing.T) {
 		},
 	}
 
-	// Create a fake pod with a not initialized condition
+	// Create a fake pod with a not initialized condition.
 	podNotInitialized := &v1.Pod{
 		Status: v1.PodStatus{
 			Conditions: []v1.PodCondition{
@@ -134,12 +145,12 @@ func TestIsPodInitializedConditionTrue(t *testing.T) {
 		},
 	}
 
-	// Verify the pod has an initialized condition
+	// Verify the pod has an initialized condition.
 	if !isPodInitializedConditionTrue(&podInitialized.Status) {
 		t.Fatalf("expected pod to have an initialized condition")
 	}
 
-	// Verify the pod does not have an initialized condition
+	// Verify the pod does not have an initialized condition.
 	if isPodInitializedConditionTrue(&podNotInitialized.Status) {
 		t.Fatalf("expected pod to have a not initialized condition")
 	}
@@ -148,7 +159,7 @@ func TestIsPodInitializedConditionTrue(t *testing.T) {
 func TestIsRestartableInitContainer(t *testing.T) {
 	t.Parallel()
 
-	// Create a fake pod with a restartable init container
+	// Create a fake pod with a restartable init container.
 	containerRestartPolicyAlways := v1.ContainerRestartPolicyAlways
 
 	podRestartable := &v1.Pod{
@@ -163,7 +174,7 @@ func TestIsRestartableInitContainer(t *testing.T) {
 		},
 	}
 
-	// Create a fake pod with a non-restartable init container
+	// Create a fake pod with a non-restartable init container.
 	podNonRestartable := &v1.Pod{
 		Spec: v1.PodSpec{
 			InitContainers: []v1.Container{
@@ -175,13 +186,13 @@ func TestIsRestartableInitContainer(t *testing.T) {
 		},
 	}
 
-	// Verify the pod has a restartable init container
+	// Verify the pod has a restartable init container.
 
 	if !isRestartableInitContainer(&podRestartable.Spec.InitContainers[0]) {
 		t.Fatalf("expected pod to have a restartable init container")
 	}
 
-	// Verify the pod does not have a restartable init container
+	// Verify the pod does not have a restartable init container.
 	if isRestartableInitContainer(&podNonRestartable.Spec.InitContainers[0]) {
 		t.Fatalf("expected pod to have a non-restartable init container")
 	}
@@ -190,13 +201,13 @@ func TestIsRestartableInitContainer(t *testing.T) {
 func TestListNodes(t *testing.T) {
 	t.Parallel()
 
-	// Create a fake client
+	// Create a fake client.
 	client := fake.NewSimpleClientset()
 
-	// Create a fake node
+	// Create a fake node.
 	node := &v1.Node{
 		ObjectMeta: metav1.ObjectMeta{
-			Name: "test",
+			Name: TestNodeName,
 		},
 	}
 
@@ -205,18 +216,18 @@ func TestListNodes(t *testing.T) {
 		t.Fatalf("error creating node: %v", err)
 	}
 
-	// List the nodes
+	// List the nodes.
 	nodes, err := ListNodes(client)
 	if err != nil {
 		t.Fatalf("error listing nodes: %v", err)
 	}
 
-	// Verify the node
+	// Verify the node.
 	if len(nodes.Items) != 1 {
 		t.Fatalf("expected 1 node, got %d", len(nodes.Items))
 	}
 
-	if nodes.Items[0].Name != "test" {
+	if nodes.Items[0].Name != TestNodeName {
 		t.Fatalf("expected node name to be 'test', got '%s'", nodes.Items[0].Name)
 	}
 }
@@ -224,13 +235,13 @@ func TestListNodes(t *testing.T) {
 func TestListPods(t *testing.T) {
 	t.Parallel()
 
-	// Create a fake client
+	// Create a fake client.
 	client := fake.NewSimpleClientset()
 
-	// Create a fake pod
+	// Create a fake pod.
 	pod := &v1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      "test",
+			Name:      TestPodName,
 			Namespace: "default",
 		},
 	}
@@ -240,18 +251,18 @@ func TestListPods(t *testing.T) {
 		t.Fatalf("error creating pod: %v", err)
 	}
 
-	// List the pods
+	// List the pods.
 	pods, err := ListPods(client, "default", "")
 	if err != nil {
 		t.Fatalf("error listing pods: %v", err)
 	}
 
-	// Verify the pod
+	// Verify the pod.
 	if len(pods.Items) != 1 {
 		t.Fatalf("expected 1 pod, got %d", len(pods.Items))
 	}
 
-	if pods.Items[0].Name != "test" {
+	if pods.Items[0].Name != TestPodName {
 		t.Fatalf("expected pod name to be 'test', got '%s'", pods.Items[0].Name)
 	}
 }
@@ -260,13 +271,13 @@ func TestListPods(t *testing.T) {
 func TestPodDetails(t *testing.T) {
 	t.Parallel()
 
-	// Create a fake client
+	// Create a fake client.
 	client := fake.NewSimpleClientset()
 
-	// Create a fake pod
+	// Create a fake pod.
 	pod := &v1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      "test",
+			Name:      TestPodName,
 			Namespace: "default",
 		},
 	}
@@ -275,7 +286,7 @@ func TestPodDetails(t *testing.T) {
 		t.Fatalf("error creating pod: %v", err)
 	}
 
-	// Get the pod details
+	// Get the pod details.
 	ready, total, status, restarts := PodDetails(pod)
 	t.Fatalf("[%d] [%d] [%s] [%s]", ready, total, status, restarts)
 }

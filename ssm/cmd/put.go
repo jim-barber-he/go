@@ -115,7 +115,7 @@ func putCompletionHelp(args []string) ([]string, cobra.ShellCompDirective) {
 func validatePutOptions() error {
 	switch putOpts.dataType {
 	case "", "text", "aws:ec2:image", "aws:ssm:integration":
-		// Valid, do nothing.
+		// Valid data types, continue validation.
 	default:
 		return errInvalidDataType
 	}
@@ -130,7 +130,7 @@ func validatePutOptions() error {
 }
 
 // doPut stores a parameter and its value into the SSM parameter store.
-// args[0] is the name of to AWS Profile to use when accessing the SSM parameter store.
+// args[0] is the name of the AWS Profile to use when accessing the SSM parameter store.
 // args[1] is the path of the SSM parameter to put.
 // args[2] is the value to put, but is only valid to use if --file is not used.
 func doPut(ctx context.Context, args []string) error {
@@ -146,7 +146,8 @@ func doPut(ctx context.Context, args []string) error {
 	ssmParam := createPutSSMParameter(param, value)
 
 	// Return if the parameter is already set to the same value and type.
-	if unchanged, err := isPutValueUnchanged(ctx, ssmClient, param, ssmParam); err == nil && unchanged {
+	unchanged, err := isPutValueUnchanged(ctx, ssmClient, param, ssmParam)
+	if err == nil && unchanged {
 		fmt.Println("Value unchanged.")
 
 		return nil

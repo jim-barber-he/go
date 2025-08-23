@@ -7,6 +7,7 @@ package main
 
 import (
 	"cmp"
+	"context"
 	"errors"
 	"fmt"
 	"log"
@@ -55,14 +56,6 @@ type options struct {
 	version       bool
 }
 
-// newNoMatchingPodsFoundError returns an error indicating that no matching pods were found.
-func newNoMatchingPodsFoundError(regularExpression string) error {
-	return &util.Error{
-		Msg:   "no matching pods found: ",
-		Param: "No pod names matched the regular expression: " + regularExpression,
-	}
-}
-
 func main() {
 	var opts options
 
@@ -90,7 +83,8 @@ func main() {
 
 	// Have run() do the main work so that it can use defer statements,
 	// while still giving us, the ability to use os.Exit(1) or log.Fatal*.
-	if err := run(opts); err != nil {
+	err := run(opts)
+	if err != nil {
 		log.Fatalln(err)
 	}
 }
@@ -104,12 +98,14 @@ func run(opts options) error {
 			return fmt.Errorf("failed to create CPU profile file: %w", err)
 		}
 		defer func(fp *os.File) {
-			if err := fp.Close(); err != nil {
+			err := fp.Close()
+			if err != nil {
 				log.Println(err)
 			}
 		}(fp)
 
-		if err := pprof.StartCPUProfile(fp); err != nil {
+		err = pprof.StartCPUProfile(fp)
+		if err != nil {
 			return fmt.Errorf("failed to start CPU profile: %w", err)
 		}
 		defer pprof.StopCPUProfile()
@@ -135,7 +131,7 @@ func run(opts options) error {
 			return !regexp.MustCompile(opts.grep).MatchString(pod.Name)
 		})
 		if len(filteredPods) == 0 {
-			return newNoMatchingPodsFoundError(opts.grep)
+			return util.NewError("no matching pods found", "No pod names matched the regular expression: "+opts.grep)
 		}
 
 		pods.Items = filteredPods
@@ -151,14 +147,16 @@ func run(opts options) error {
 			return fmt.Errorf("failed to create memory profile file: %w", err)
 		}
 		defer func(fp *os.File) {
-			if err := fp.Close(); err != nil {
+			err := fp.Close()
+			if err != nil {
 				log.Println(err)
 			}
 		}(fp)
 		// Get up-to-date statistics.
 		runtime.GC()
 
-		if err := pprof.WriteHeapProfile(fp); err != nil {
+		err = pprof.WriteHeapProfile(fp)
+		if err != nil {
 			return fmt.Errorf("failed to write memory profile: %w", err)
 		}
 	}
@@ -262,7 +260,8 @@ func fetchNodesAndPods(
 		return nil
 	})
 
-	if err := grp.Wait(); err != nil {
+	err := grp.Wait()
+	if err != nil {
 		return nil, nil, fmt.Errorf("failed to fetch nodes and/or pods: %w", err)
 	}
 
@@ -278,7 +277,8 @@ func selectNamespace(clientset *kubernetes.Clientset, opts options) (string, err
 
 	if opts.namespace != "" {
 		// Verify that the supplied namespace is valid.
-		if _, err := k8s.GetNamespace(clientset, opts.namespace); err != nil {
+		_, err := k8s.GetNamespace(context.Background(), clientset, opts.namespace)
+		if err != nil {
 			return "", fmt.Errorf("invalid namespace: %w", err)
 		}
 

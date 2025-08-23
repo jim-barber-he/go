@@ -9,7 +9,7 @@ import (
 var versionCmd = &cobra.Command{
 	Use:   "version",
 	Short: "Display the version of the tool",
-	Run: func(cmd *cobra.Command, args []string) {
+	Run: func(_ *cobra.Command, _ []string) {
 		util.DisplayVersion("ssm")
 	},
 	SilenceErrors: true,

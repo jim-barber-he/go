@@ -25,32 +25,27 @@ var (
 	errGettingPods      = errors.New("error getting pods")
 )
 
-func newContextNotFoundError(context string) error {
-	return &util.Error{
-		Msg:   "context ",
-		Param: context + " not found in kubeconfig",
-	}
-}
-
 // buildConfigFromFlags creates a Kubernetes client configuration from the provided kubeconfig path and context.
 // Based on clientcmd.BuildConfigFromFlags from the kubernetes go-client but with the added `context` parameter to set
 // `CurrentContext`, and with the unneeded masterUrl parameter removed.
-func buildConfigFromFlags(kubeconfigPath, context string) (*rest.Config, error) {
-	return clientcmd.NewNonInteractiveDeferredLoadingClientConfig(
+func buildConfigFromFlags(kubeconfigPath, context string) *rest.Config {
+	config, err := clientcmd.NewNonInteractiveDeferredLoadingClientConfig(
 		&clientcmd.ClientConfigLoadingRules{ExplicitPath: kubeconfigPath},
 		&clientcmd.ConfigOverrides{
 			CurrentContext: context,
 		}).ClientConfig()
+	if err != nil {
+		panic(fmt.Errorf("failed to create Kubernetes client configuration: %w", err))
+	}
+
+	return config
 }
 
 // Client returns a Kubernetes client.
 func Client(kubeContext string) *kubernetes.Clientset {
-	config, err := buildConfigFromFlags(KubeConfig(), kubeContext)
-	if err != nil {
-		panic(fmt.Errorf("failed to build config from flags: %w", err))
-	}
+	config := buildConfigFromFlags(KubeConfig(), kubeContext)
 
-	// Create the clientset
+	// Create the clientset.
 	clientset, err := kubernetes.NewForConfig(config)
 	if err != nil {
 		panic(fmt.Errorf("failed to create Kubernetes clientset: %w", err))
@@ -60,10 +55,10 @@ func Client(kubeContext string) *kubernetes.Clientset {
 }
 
 // GetNamespace returns a namespace.
-func GetNamespace(client kubernetes.Interface, name string) (*v1.Namespace, error) {
-	ptr, err := client.CoreV1().Namespaces().Get(context.Background(), name, metav1.GetOptions{})
+func GetNamespace(ctx context.Context, client kubernetes.Interface, name string) (*v1.Namespace, error) {
+	ptr, err := client.CoreV1().Namespaces().Get(ctx, name, metav1.GetOptions{})
 	if err != nil {
-		err = fmt.Errorf("%w: %w", errGettingNamespace, err)
+		err = fmt.Errorf("%w %s: %w", errGettingNamespace, name, err)
 
 		return nil, err
 	}
@@ -72,10 +67,10 @@ func GetNamespace(client kubernetes.Interface, name string) (*v1.Namespace, erro
 }
 
 // GetNode returns a node.
-func GetNode(client kubernetes.Interface, name string) (*v1.Node, error) {
-	ptr, err := client.CoreV1().Nodes().Get(context.Background(), name, metav1.GetOptions{})
+func GetNode(ctx context.Context, client kubernetes.Interface, name string) (*v1.Node, error) {
+	ptr, err := client.CoreV1().Nodes().Get(ctx, name, metav1.GetOptions{})
 	if err != nil {
-		return nil, fmt.Errorf("%w: %w", errGettingNode, err)
+		return nil, fmt.Errorf("%w %s: %w", errGettingNode, name, err)
 	}
 
 	return ptr, nil
@@ -164,7 +159,7 @@ func Namespace(kubeContext string) string {
 
 	context, exists := config.Contexts[kubeContext]
 	if !exists {
-		panic(newContextNotFoundError(kubeContext))
+		panic(util.NewError("context not found in kubeconfig", kubeContext))
 	}
 
 	ns := context.Namespace
@@ -239,7 +234,7 @@ func PodDetails(pod *v1.Pod) (readyContainers, totalContainers int, status, rest
 
 			continue
 		case icStatus.State.Terminated != nil:
-			// Initialization has failed
+			// Initialization has failed.
 			if len(icStatus.State.Terminated.Reason) == 0 {
 				if icStatus.State.Terminated.Signal != 0 {
 					status = fmt.Sprintf("Init:Signal:%d", icStatus.State.Terminated.Signal)

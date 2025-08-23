@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/MakeNowJust/heredoc/v2"
 	"github.com/jim-barber-he/go/aws"
@@ -53,12 +54,17 @@ func deleteCompletionHelp(args []string) ([]string, cobra.ShellCompDirective) {
 }
 
 // doDelete deletes a parameter from the SSM parameter store.
-// args[0] is the name of to AWS Profile to use when accessing the SSM parameter store.
+// args[0] is the name of the AWS Profile to use when accessing the SSM parameter store.
 // args[1] is the path of the SSM parameter to delete.
 func doDelete(ctx context.Context, args []string) error {
 	ssmClient := getSSMClient(ctx, args[0])
 
 	param := getSSMPath(args[0], args[1])
 
-	return aws.SSMDelete(ctx, ssmClient, param)
+	err := aws.SSMDelete(ctx, ssmClient, param)
+	if err != nil {
+		return fmt.Errorf("%w", err)
+	}
+
+	return nil
 }
