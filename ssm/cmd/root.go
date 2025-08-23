@@ -17,6 +17,37 @@ import (
 	"github.com/spf13/cobra"
 )
 
+// Constants for environment configuration
+const (
+	// Environment names
+	EnvDev        = "dev"
+	EnvProd       = "prod"
+	EnvTest       = "test"
+	EnvMinikube   = "minikube"
+	
+	// AWS profiles
+	ProfileHeTest = "hetest"
+	ProfileHeAWS  = "heaws"
+	
+	// Default configuration values
+	DefaultRegion        = "ap-southeast-2"
+	DefaultTerminalWidth = 80
+	
+	// SSM path configuration
+	SSMPathPrefix = "/helm/"
+	
+	// Environment variables
+	EnvVarAWSRegion        = "AWS_REGION"
+	EnvVarAWSDefaultRegion = "AWS_DEFAULT_REGION"
+)
+
+// EnvironmentConfig holds environment-specific configuration settings.
+type EnvironmentConfig struct {
+	Name        string
+	AWSProfile  string
+	SSMBasePath string
+}
+
 // Commandline options.
 type rootOptions struct {
 	profile string
@@ -87,6 +118,36 @@ func init() {
 	rootCmd.PersistentFlags().StringVar(&rootOpts.region, "region", defaultRegion, "AWS region to use")
 }
 
+// getEnvironmentConfig returns the configuration for a specific environment.
+func getEnvironmentConfig(environment string) EnvironmentConfig {
+	switch {
+	case environment == EnvDev:
+		return EnvironmentConfig{
+			Name:        EnvDev,
+			AWSProfile:  ProfileHeTest,
+			SSMBasePath: SSMPathPrefix + EnvMinikube,
+		}
+	case strings.HasPrefix(environment, EnvProd):
+		return EnvironmentConfig{
+			Name:        environment,
+			AWSProfile:  ProfileHeAWS,
+			SSMBasePath: SSMPathPrefix + environment,
+		}
+	case strings.HasPrefix(environment, EnvTest):
+		return EnvironmentConfig{
+			Name:        environment,
+			AWSProfile:  ProfileHeTest,
+			SSMBasePath: SSMPathPrefix + environment,
+		}
+	default:
+		return EnvironmentConfig{
+			Name:        environment,
+			AWSProfile:  environment,
+			SSMBasePath: SSMPathPrefix + environment,
+		}
+	}
+}
+
 // getAWSProfile takes an environment name and returns an AWS Profile based on what is used at my workplace.
 // Note that if --profile was passed, then that will take precedence.
 func getAWSProfile(environment string) string {
@@ -95,29 +156,20 @@ func getAWSProfile(environment string) string {
 		return rootOpts.profile
 	}
 
-	// Determine the AWS profile based on the environment.
-	switch {
-	case environment == "dev":
-		return "hetest"
-	case strings.HasPrefix(environment, "prod"):
-		return "heaws"
-	case strings.HasPrefix(environment, "test"):
-		return "hetest"
-	default:
-		// For anything else set the AWS profile to the name of the environment.
-		return environment
-	}
+	// Get environment configuration
+	config := getEnvironmentConfig(environment)
+	return config.AWSProfile
 }
 
 // getDefaultRegion determines the default AWS region based on environment variables.
 func getDefaultRegion() string {
 	switch {
-	case os.Getenv("AWS_REGION") != "":
-		return os.Getenv("AWS_REGION")
-	case os.Getenv("AWS_DEFAULT_REGION") != "":
-		return os.Getenv("AWS_DEFAULT_REGION")
+	case os.Getenv(EnvVarAWSRegion) != "":
+		return os.Getenv(EnvVarAWSRegion)
+	case os.Getenv(EnvVarAWSDefaultRegion) != "":
+		return os.Getenv(EnvVarAWSDefaultRegion)
 	default:
-		return "ap-southeast-2"
+		return DefaultRegion
 	}
 }
 
@@ -138,28 +190,23 @@ func getSSMPath(environment, path string) string {
 		return path
 	}
 
-	// dev parameters at my workplace are under the /helm/minikube/ SSM parameter store path.
-	if environment == "dev" {
-		environment = "minikube"
-	}
-	// Absolute SSM paths are returned exactly as passed in.
-	// Otherwise SSM paths are formatted to suit my workplace,
-	// where they are converted to be lowercase, and have a path prefix added based on the environment.
+	// Get environment configuration
+	config := getEnvironmentConfig(environment)
+	
+	// Build the path based on the environment configuration
 	if path == "" {
-		path = "/helm/" + environment
-	} else {
-		path = fmt.Sprintf("/helm/%s/%s", environment, strings.ToLower(path))
+		return config.SSMBasePath
 	}
-
-	return path
+	
+	return config.SSMBasePath + "/" + strings.ToLower(path)
 }
 
-// getTerminalWidth retrieves the terminal width, defaulting to 80 if an error occurs.
+// getTerminalWidth retrieves the terminal width, defaulting to the default width if an error occurs.
 // The width is reduced by one since words that bump to the hard right of the terminal look uncomfortable.
 func getTerminalWidth() int {
 	cols, _, err := util.TerminalSize()
 	if err != nil {
-		cols = 80
+		cols = DefaultTerminalWidth
 	}
 	// Reduce it by one since words that bump to the hard right of the terminal look uncomfortable.
 	return cols - 1

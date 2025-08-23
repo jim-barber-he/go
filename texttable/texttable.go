@@ -20,14 +20,101 @@ const (
 	tableTabWidth = 8
 )
 
+// TableConfig holds configuration for table formatting.
+type TableConfig struct {
+	MinWidth int
+	TabWidth int
+	Padding  int
+	PadChar  byte
+	Flags    uint
+}
+
+// DefaultTableConfig returns a TableConfig with sensible defaults.
+func DefaultTableConfig() TableConfig {
+	return TableConfig{
+		MinWidth: tableMinWidth,
+		TabWidth: tableTabWidth,
+		Padding:  tablePadding,
+		PadChar:  tablePadChar,
+		Flags:    tableFlags,
+	}
+}
+
+// FieldInfo contains metadata about a table field.
+type FieldInfo struct {
+	Field       reflect.StructField
+	Title       string
+	OmitIfEmpty bool
+	Index       int
+}
+
 // Table is a generic struct for representing a table with a slice of rows.
 type Table[R any] struct {
-	Rows []R
+	Rows   []R
+	Config TableConfig
+}
+
+// NewTable creates a new table with default configuration.
+func NewTable[R any]() *Table[R] {
+	return &Table[R]{
+		Config: DefaultTableConfig(),
+	}
 }
 
 // Append adds a new row to existing rows in a table.
 func (t *Table[R]) Append(r R) {
 	t.Rows = append(t.Rows, r)
+}
+
+// analyzeFields extracts field information from the table row type.
+func (t *Table[R]) analyzeFields() []FieldInfo {
+	if len(t.Rows) == 0 {
+		return nil
+	}
+
+	val := reflect.ValueOf(t.Rows[0]).Elem()
+	fields := reflect.VisibleFields(val.Type())
+	fieldInfos := make([]FieldInfo, 0, len(fields))
+
+	for i, field := range fields {
+		titleTag := field.Tag.Get("title")
+		titleArray := strings.Split(titleTag, ",")
+		
+		info := FieldInfo{
+			Field:       field,
+			Title:       titleArray[0],
+			OmitIfEmpty: len(titleArray) > 1 && titleArray[1] == "omitempty",
+			Index:       i,
+		}
+		
+		fieldInfos = append(fieldInfos, info)
+	}
+
+	return fieldInfos
+}
+
+// determineOmissions calculates which fields should be omitted based on their values.
+func (t *Table[R]) determineOmissions(fieldInfos []FieldInfo) []bool {
+	omit := make([]bool, len(fieldInfos))
+
+	// Mark fields for omission if they have the omitempty tag
+	for i, info := range fieldInfos {
+		omit[i] = info.OmitIfEmpty
+	}
+
+	// Don't omit fields that have values in any row
+	for i, shouldOmit := range omit {
+		if shouldOmit {
+			for _, row := range t.Rows {
+				if reflect.ValueOf(row).Elem().Field(i).String() != "" {
+					omit[i] = false
+					break
+				}
+			}
+		}
+	}
+
+	return omit
 }
 
 // Write the table to an io.Writer. If no io.Writer is provided, it defaults to os.Stdout.
@@ -36,72 +123,53 @@ func (t *Table[R]) Write(w ...io.Writer) {
 		return
 	}
 
-	// Using the first row of the table, use reflection to determine what fields are in the table row.
-	val := reflect.ValueOf(t.Rows[0]).Elem()
-	fields := reflect.VisibleFields(val.Type())
-	numFields := len(fields)
-
-	// Create a slice to determine which fields to omit from the output.
-	// Initially any struct field with the `omitempty` tag is set to true to be omitted.
-	omit := make([]bool, numFields)
-
-	for i, sf := range fields {
-		titleArray := strings.Split(sf.Tag.Get("title"), ",")
-		if len(titleArray) > 1 && titleArray[1] == "omitempty" {
-			omit[i] = true
-		}
-	}
-	// For any field set to be omitted, don't omit it if it has a value set in any of its rows.
-	for i := range omit {
-		if omit[i] {
-			for _, row := range t.Rows {
-				if reflect.ValueOf(row).Elem().Field(i).String() != "" {
-					omit[i] = false
-
-					break
-				}
-			}
-		}
+	fieldInfos := t.analyzeFields()
+	if fieldInfos == nil {
+		return
 	}
 
-	// Create a tab writer to display the table. Each row needs to consist of tab separated strings.
+	omit := t.determineOmissions(fieldInfos)
+
+	// Use default config if not set
+	config := t.Config
+	if config.MinWidth == 0 && config.TabWidth == 0 && config.Padding == 0 && config.PadChar == 0 && config.Flags == 0 {
+		config = DefaultTableConfig()
+	}
+
+	// Create a tab writer to display the table
 	var tw *tabwriter.Writer
 	if len(w) > 0 {
-		tw = tabwriter.NewWriter(w[0], tableMinWidth, tableTabWidth, tablePadding, tablePadChar, tableFlags)
+		tw = tabwriter.NewWriter(w[0], config.MinWidth, config.TabWidth, config.Padding, config.PadChar, config.Flags)
 	} else {
-		tw = tabwriter.NewWriter(os.Stdout, tableMinWidth, tableTabWidth, tablePadding, tablePadChar, tableFlags)
+		tw = tabwriter.NewWriter(os.Stdout, config.MinWidth, config.TabWidth, config.Padding, config.PadChar, config.Flags)
 	}
 
-	// Add the title row of the table skipping any `omitempty` columns where all its values are empty.
-	var s []string
-
-	for i, sf := range fields {
+	// Add the title row of the table skipping any omitted columns
+	var titleRow []string
+	for i, info := range fieldInfos {
 		if omit[i] {
 			continue
 		}
-
-		s = append(s, strings.Split(sf.Tag.Get("title"), ",")[0])
+		titleRow = append(titleRow, info.Title)
 	}
+	fmt.Fprintln(tw, strings.Join(titleRow, "\t"))
 
-	fmt.Fprintln(tw, strings.Join(s, "\t"))
-
-	// Add the table rows skipping any `omitempty` columns where all its values are empty.
+	// Add the table rows skipping any omitted columns
 	for _, row := range t.Rows {
-		s = nil
-		val = reflect.ValueOf(row).Elem()
+		var rowData []string
+		val := reflect.ValueOf(row).Elem()
 
-		for i := range numFields {
+		for i := range len(fieldInfos) {
 			if omit[i] {
 				continue
 			}
-
-			s = append(s, val.Field(i).String())
+			rowData = append(rowData, val.Field(i).String())
 		}
 
-		fmt.Fprintln(tw, strings.Join(s, "\t"))
+		fmt.Fprintln(tw, strings.Join(rowData, "\t"))
 	}
 
-	// Display the table.
+	// Display the table
 	if err := tw.Flush(); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 	}

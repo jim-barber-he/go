@@ -5,21 +5,40 @@ This part handles working with the SSM Parameter Store.
 package aws
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/ssm"
 	"github.com/aws/aws-sdk-go-v2/service/ssm/types"
-	"github.com/jim-barber-he/go/util"
 	"golang.org/x/sync/errgroup"
 )
 
 // Number of concurrent SSM API calls to allow.
 const ssmConcurrencyLimit = 20
+
+// Buffer pool for JSON encoding to reduce memory allocations
+var jsonBufferPool = sync.Pool{
+	New: func() interface{} {
+		return bytes.NewBuffer(make([]byte, 0, 256)) // Pre-allocate 256 bytes
+	},
+}
+
+// getJSONBuffer retrieves a buffer from the pool
+func getJSONBuffer() *bytes.Buffer {
+	return jsonBufferPool.Get().(*bytes.Buffer)
+}
+
+// putJSONBuffer returns a buffer to the pool after resetting it
+func putJSONBuffer(buf *bytes.Buffer) {
+	buf.Reset()
+	jsonBufferPool.Put(buf)
+}
 
 // SSMParameter represents some of the fields that makes up a parameter in the AWS SSM Parameter Store.
 type SSMParameter struct {
@@ -49,26 +68,46 @@ func (p *SSMParameter) Print(hideValue, json bool) {
 	}
 }
 
-// printJSON is a helper function to print an SSMParameter in JSON format.
+// printJSON is a helper function to print an SSMParameter in JSON format using pooled buffers.
 func printJSON(param SSMParameter, hideValue bool) {
-	var (
-		err      error
-		jsonData []byte
-	)
+	buf := getJSONBuffer()
+	defer putJSONBuffer(buf)
+
+	encoder := json.NewEncoder(buf)
+	encoder.SetIndent("", "  ")
 
 	if hideValue {
-		jsonData, err = util.MarshalWithoutFields(param, "value")
+		// Create a copy of the parameter without the value field
+		paramCopy := SSMParameter{
+			AllowedPattern:   param.AllowedPattern,
+			ARN:              param.ARN,
+			DataType:         param.DataType,
+			Description:      param.Description,
+			Error:            param.Error,
+			KeyID:            param.KeyID,
+			LastModifiedDate: param.LastModifiedDate,
+			LastModifiedUser: param.LastModifiedUser,
+			Name:             param.Name,
+			Policies:         param.Policies,
+			Tier:             param.Tier,
+			Type:             param.Type,
+			// Value intentionally omitted
+			Version: param.Version,
+		}
+		
+		if err := encoder.Encode(paramCopy); err != nil {
+			fmt.Printf("Error encoding SSMParameter to JSON: %v\n", err)
+			return
+		}
 	} else {
-		jsonData, err = json.Marshal(param)
+		if err := encoder.Encode(param); err != nil {
+			fmt.Printf("Error encoding SSMParameter to JSON: %v\n", err)
+			return
+		}
 	}
 
-	if err != nil {
-		fmt.Printf("Error converting SSMParameter copy to JSON: %v\n", err)
-
-		return
-	}
-
-	fmt.Println(string(jsonData))
+	// Print the JSON output (encoder.Encode adds a newline, so we use Print instead of Println)
+	fmt.Print(buf.String())
 }
 
 // printText is a helper function to print an SSMParameter in text format.
