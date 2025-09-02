@@ -39,7 +39,7 @@ func init() {
 
 // deleteCompletionHelp provides shell completion help for the delete command.
 func deleteCompletionHelp(args []string) ([]string, cobra.ShellCompDirective) {
-	var completionHelp []string
+	var completionHelp []cobra.Completion
 
 	switch {
 	case len(args) == 0:
