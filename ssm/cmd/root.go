@@ -90,6 +90,9 @@ func init() {
 
 	rootCmd.PersistentFlags().StringVar(&rootOpts.profile, "profile", "", "AWS profile to use")
 	rootCmd.PersistentFlags().StringVar(&rootOpts.region, "region", defaultRegion, "AWS region to use")
+
+	// Disable the default completion that expands filenames.
+	rootCmd.CompletionOptions.SetDefaultShellCompDirective(cobra.ShellCompDirectiveNoFileComp)
 }
 
 // getAWSProfile takes an environment name and returns an AWS Profile based on what is used at my workplace.

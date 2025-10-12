@@ -87,11 +87,17 @@ func init() {
 		&putOpts.tier, "tier", "", "The parameter tier to use: Standard, Advanced, or Intelligent-Tiering",
 	)
 	putCmd.Flags().BoolVarP(&putOpts.verbose, "verbose", "v", false, "Show the value set for the parameter")
+
+	// Enable file completion for the file flag.
+	err := putCmd.RegisterFlagCompletionFunc("file", cobra.FixedCompletions(nil, cobra.ShellCompDirectiveDefault))
+	if err != nil {
+		panic(err)
+	}
 }
 
 // putCompletionHelp provides shell completion help for the put command.
 func putCompletionHelp(args []string) ([]string, cobra.ShellCompDirective) {
-	var completionHelp []string
+	var completionHelp []cobra.Completion
 
 	switch {
 	case len(args) == 0:
