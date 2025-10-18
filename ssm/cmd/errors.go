@@ -20,18 +20,10 @@ var (
 	errValueWithFile     = errors.New("VALUE should not be provided when --file is used")
 )
 
-// newBriefAndFullError creates a new error for when the --brief and --full options are both specified.
-func newBriefAndFullError(usage string) error {
+// newFullAndVerboseError creates a new error for when the --full and --verbose options are both specified.
+func newFullAndVerboseError(usage string) error {
 	return &util.Error{
-		Msg:   "it does not make sense to specify both --brief and --full\n",
-		Param: usage,
-	}
-}
-
-// newBriefAndJSONError creates a new error for when the --brief and --json options are both specified.
-func newBriefAndJSONError(usage string) error {
-	return &util.Error{
-		Msg:   "it does not make sense to specify both --brief and --json\n",
+		Msg:   "it does not make sense to specify both --full and --verbose\n",
 		Param: usage,
 	}
 }
@@ -51,4 +43,12 @@ func newInvalidTierError() error {
 	}
 
 	return errors.New("invalid tier specified. Must be one of: " + strings.Join(ssmTiersStr, ", "))
+}
+
+// newJSONUsageError creates a new error for when the --json option is specified with the default one line output.
+func newJSONUsageError(usage string) error {
+	return &util.Error{
+		Msg:   "it does not make sense to specify --json without --full or --verbose\n",
+		Param: usage,
+	}
 }

@@ -31,6 +31,7 @@ Available Commands:
   help        Help about any command
   list        List parameters from the SSM parameter store below a supplied path
   put         Store a parameter and its value in the AWS SSM parameter store
+  version     Display the version of the tool
 
 Flags:
   -h, --help             help for ssm
@@ -93,6 +94,7 @@ Usage:
 Flags:
   -f, --full   Show all details for the parameter
   -h, --help   help for get
+      --json   Output the parameter in JSON format
 
 Global Flags:
       --profile string   AWS profile to use
@@ -108,12 +110,13 @@ Usage:
   ssm list [flags] ENVIRONMENT [PATH]
 
 Flags:
-  -b, --brief          Show parameter = value output
   -f, --full           Show additional details for each parameter
   -h, --help           help for list
+      --json           Display the output as JSON (with --full or --verbose only)
   -n, --no-value       Do not show the parameter value
   -r, --recursive      Recursively list parameters below the parameter store path
   -s, --safe-decrypt   Slower decrypt that can handle errors
+  -v, --verbose        Show Name, Value, and Type fields for each parameter
 
 Global Flags:
       --profile string   AWS profile to use
@@ -130,11 +133,16 @@ Usage:
   ssm put [flags] ENVIRONMENT PARAMETER --file FILE
 
 Flags:
-  -f, --file string     Get the value from the file contents
-  -h, --help            help for put
-      --key-id string   The ID of the KMS key to encrypt SecureStrings (default "alias/parameter_store_key")
-      --secure          Store the value as a SecureString
-  -v, --verbose         Show the value set for the parameter
+      --allowed-pattern string   A regular expression used to validate the parameter value
+      --data-type string         The data type for a String parameter
+      --description string       Information  about the parameter that you want to add
+  -f, --file string              Get the value from the file contents
+  -h, --help                     help for put
+      --key-id string            The ID of the KMS key to encrypt SecureStrings (default "alias/parameter_store_key")
+      --policies string          One or more policies to apply to a parameter in JSON array format
+      --secure                   Store the value as a SecureString
+      --tier string              The parameter tier to use: Standard, Advanced, or Intelligent-Tiering
+  -v, --verbose                  Show the value set for the parameter
 
 Global Flags:
       --profile string   AWS profile to use

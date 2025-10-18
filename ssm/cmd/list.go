@@ -15,12 +15,12 @@ import (
 
 // Commandline options.
 type listOptions struct {
-	brief       bool
 	full        bool
 	json        bool
 	noValue     bool
 	recursive   bool
 	safeDecrypt bool
+	verbose     bool
 }
 
 var listLong = heredoc.Doc(`
@@ -28,21 +28,24 @@ var listLong = heredoc.Doc(`
 
 	By default it will only list the parameters directly below the supplied path.
 
-	If the --recursive flag is used then it will also show all parameters in the paths below the specified path.
-
-	If the --brief flag is specified, then the output will be one line per parameter of the form:
+	The default output will be one line per parameter of the form:
 	'ssm_parameter_name = value'.
-	This option cannot be used with the --full or --json flags.
+
+	If the --recursive flag is used then it will also show all parameters in the paths below the specified path.
 
 	If the --full flag is specified, then more details about each parameter will be shown.
 
 	If the --json flag is specified, then the output will be formatted as JSON.
 
-	If no PATH is passed at all, then for the 'dev', 'test*', and 'prod*' environments it will look in
-	'/helm/minikube/', '/helm/test*/', or '/helm/prod*/' respectively.
-
 	The --safe-decrypt flag is slower, but can handle if you have SecureStrings in your SSM parameter store that
 	can't be decrypted due to their KMS key being inaccessible or deleted.
+
+	If the --verbose flag is specified, then each parameter will be listed over multiple lines against the
+	'Name', 'Value', and 'Type' fields.
+	This option cannot be used with the --full flag.
+
+	If no PATH is passed at all, then for the 'dev', 'test*', and 'prod*' environments it will look in
+	'/helm/minikube/', '/helm/test*/', or '/helm/prod*/' respectively.
 `)
 
 var (
@@ -75,14 +78,14 @@ var (
 func init() {
 	rootCmd.AddCommand(listCmd)
 
-	listCmd.Flags().BoolVarP(&listOpts.brief, "brief", "b", false, "Show parameter = value output")
 	listCmd.Flags().BoolVarP(&listOpts.full, "full", "f", false, "Show additional details for each parameter")
-	listCmd.Flags().BoolVar(&listOpts.json, "json", false, "Display the output as JSON")
+	listCmd.Flags().BoolVar(&listOpts.json, "json", false, "Display the output as JSON (with --full or --verbose only)")
 	listCmd.Flags().BoolVarP(&listOpts.noValue, "no-value", "n", false, "Do not show the parameter value")
 	listCmd.Flags().BoolVarP(
 		&listOpts.recursive, "recursive", "r", false, "Recursively list parameters below the parameter store path",
 	)
 	listCmd.Flags().BoolVarP(&listOpts.safeDecrypt, "safe-decrypt", "s", false, "Slower decrypt that can handle errors")
+	listCmd.Flags().BoolVarP(&listOpts.verbose, "verbose", "v", false, "Show Name, Value, and Type fields for each parameter")
 }
 
 // listCompletionHelp provides shell completion help for the delete command.
@@ -103,12 +106,12 @@ func listCompletionHelp(args []string) ([]string, cobra.ShellCompDirective) {
 
 // validateListOptions validates the list command options.
 func validateListOptions(cmd *cobra.Command) error {
-	if listOpts.brief && listOpts.full {
-		return newBriefAndFullError(cmd.UsageString())
+	if listOpts.full && listOpts.verbose {
+		return newFullAndVerboseError(cmd.UsageString())
 	}
 
-	if listOpts.brief && listOpts.json {
-		return newBriefAndJSONError(cmd.UsageString())
+	if listOpts.json && !listOpts.full && !listOpts.verbose {
+		return newJSONUsageError(cmd.UsageString())
 	}
 
 	return nil
@@ -151,22 +154,22 @@ func displayListParameters(params []aws.SSMParameter) {
 	numParams := len(params) - 1
 	for idx, param := range params {
 		switch {
-		case listOpts.brief:
-			displayBrief(param)
 		case listOpts.full:
 			param.Print(listOpts.noValue, listOpts.json)
+		case listOpts.verbose:
+			displayVerbose(param)
 		default:
 			displayDefault(param)
 		}
 
-		if idx < numParams && !listOpts.brief && !listOpts.json {
+		if idx < numParams && !listOpts.json && (listOpts.full || listOpts.verbose) {
 			fmt.Println()
 		}
 	}
 }
 
-// displayBrief is a helper function to display a parameter in a brief format.
-func displayBrief(param aws.SSMParameter) {
+// displayDefault is a helper function to display a parameter in a one line format.
+func displayDefault(param aws.SSMParameter) {
 	if listOpts.noValue {
 		fmt.Println(param.Name)
 	} else {
@@ -174,17 +177,17 @@ func displayBrief(param aws.SSMParameter) {
 	}
 }
 
-// displayDefault is a helper function to display a parameter in the default format.
-func displayDefault(param aws.SSMParameter) {
+// displayVerbose is a helper function to display a parameter in the verbose format.
+func displayVerbose(param aws.SSMParameter) {
 	if listOpts.json {
-		displayDefaultJSON(param)
+		displayVerboseJSON(param)
 	} else {
-		displayDefaultText(param)
+		displayVerboseText(param)
 	}
 }
 
-// displayDefaultJSON is a helper function to display a parameter in default JSON format.
-func displayDefaultJSON(param aws.SSMParameter) {
+// displayVerboseJSON is a helper function to display a parameter in default JSON format.
+func displayVerboseJSON(param aws.SSMParameter) {
 	var (
 		err      error
 		jsonData []byte
@@ -203,8 +206,8 @@ func displayDefaultJSON(param aws.SSMParameter) {
 	fmt.Println(string(jsonData))
 }
 
-// displayDefaultText is a helper function to display a parameter in default text format.
-func displayDefaultText(param aws.SSMParameter) {
+// displayVerboseText is a helper function to display a parameter in default text format.
+func displayVerboseText(param aws.SSMParameter) {
 	fmt.Printf("Name: %s\n", param.Name)
 
 	if !listOpts.noValue {
