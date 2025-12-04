@@ -10,6 +10,7 @@ import (
 	"cmp"
 	"fmt"
 	"log"
+	"regexp"
 	"slices"
 	"strings"
 
@@ -41,9 +42,12 @@ type tableRow struct {
 }
 
 func main() {
+	instanceGroup := flag.String("instance-group", "", "Filter nodes by instance group regex")
+	instanceType := flag.String("instance-type", "", "Filter nodes by instance type regex")
 	kubeContext := flag.String("context", "", "The name of the kubeconfig context to use")
 	version := flag.BoolP("version", "v", false, "Display the version of this tool")
 	wide := flag.BoolP("wide", "w", false, "Add KernelVersion, OSImage, and Architecture columns")
+
 	flag.Parse()
 
 	if *version {
@@ -57,6 +61,22 @@ func main() {
 	nodes, err := k8s.ListNodes(clientset)
 	if err != nil {
 		log.Fatalf("Error listing nodes: %v", err)
+	}
+
+	if *instanceGroup != "" {
+		filteredNodes := slices.DeleteFunc(nodes.Items, func(node v1.Node) bool {
+			return !regexp.MustCompile(*instanceGroup).MatchString(node.Labels["kops.k8s.io/instancegroup"])
+		})
+
+		nodes.Items = filteredNodes
+	}
+
+	if *instanceType != "" {
+		filteredNodes := slices.DeleteFunc(nodes.Items, func(node v1.Node) bool {
+			return !regexp.MustCompile(*instanceType).MatchString(node.Labels["node.kubernetes.io/instance-type"])
+		})
+
+		nodes.Items = filteredNodes
 	}
 
 	if len(nodes.Items) == 0 {

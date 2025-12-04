@@ -33,6 +33,7 @@ const (
 	defLockHost              string = "localhost"
 	defLockPort              int    = 6379
 	defLockDB                int    = 0
+	defLockShowKey           bool   = false
 	defLockTLS               bool   = false
 	defLockTLSSkipVerify     bool   = false
 	defLockRedisTimeout      int    = 30
@@ -50,6 +51,7 @@ const (
 	envLockHost              = "CRONLOCK_HOST"
 	envLockPort              = "CRONLOCK_PORT"
 	envLockDB                = "CRONLOCK_DB"
+	envLockShowKey           = "CRONLOCK_SHOW_KEY"
 	envLockTLS               = "CRONLOCK_TLS"
 	envLockTLSSkipVerify     = "CRONLOCK_TLS_SKIP_VERIFY"
 	envLockRedisTimeout      = "CRONLOCK_REDIS_TIMEOUT"
@@ -201,9 +203,15 @@ func run() int {
 	expireAtMax := time.Now().UTC().Unix() + int64(lockRelease) + 1
 	expireAtMin := time.Now().UTC().Unix() + int64(lockGrace) + 1
 
-	// Acquire lock.
-	slog.Debug(fmt.Sprintf("Acquiring lock on %s key", redisKey))
+	// Determine if we should show the name of the Redis key being used.
+	msg := fmt.Sprintf("Acquiring lock on %s key", redisKey)
+	if util.GetEnvBool(envLockShowKey, defLockShowKey) {
+		slog.Info(msg)
+	} else {
+		slog.Debug(msg)
+	}
 
+	// Acquire lock.
 	acquired, err := rdb.SetNX(ctx, redisKey, expireAtMax, time.Duration(lockRelease)*time.Second).Result()
 	if err != nil {
 		slog.Error(err.Error())
