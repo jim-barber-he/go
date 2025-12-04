@@ -225,6 +225,7 @@ func MarshalWithoutFields(v any, omitFields ...string) ([]byte, error) {
 // Returns an integer suitable for use as an exit code, and an error.
 func RunWithTimeout(timeout int, command string, args ...string) (int, error) {
 	ctx := context.Background()
+
 	if timeout > 0 {
 		var cancel context.CancelFunc
 

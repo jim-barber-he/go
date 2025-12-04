@@ -108,6 +108,7 @@ func run(opts options) error {
 		if err != nil {
 			return fmt.Errorf("failed to start CPU profile: %w", err)
 		}
+
 		defer pprof.StopCPUProfile()
 	}
 
