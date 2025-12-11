@@ -18,6 +18,14 @@ import (
 	"k8s.io/client-go/tools/clientcmd"
 )
 
+// PodInfo holds some information about a pod as returned by the PodDetails function.
+type PodInfo struct {
+	ReadyContainers int
+	TotalContainers int
+	Status          string
+	Restarts        string
+}
+
 var (
 	errGettingNamespace = errors.New("error getting namespace")
 	errGettingNode      = errors.New("error getting node")
@@ -172,18 +180,18 @@ func Namespace(kubeContext string) string {
 
 // PodDetails returns details on pods as you would see in the READY, STATUS, and RESTARTS columns of kubectl output.
 // The READY would be built up via "readyContainers/totalContainers".
-// Based on: printPod() function in kubernetes/pkg/printers/internalversion/printers.go of kubernetes source code.
-func PodDetails(pod *v1.Pod) (readyContainers, totalContainers int, status, restarts string) {
+// Based on: printPod() function in pkg/printers/internalversion/printers.go of the kubernetes source code.
+func PodDetails(pod *v1.Pod) PodInfo {
 	restartCount := 0
 	restartableInitContainerRestarts := 0
-	totalContainers = len(pod.Spec.Containers)
-	readyContainers = 0
+	totalContainers := len(pod.Spec.Containers)
+	readyContainers := 0
 	lastRestartDate := time.Time{}
 	lastRestartableInitContainerRestartDate := time.Time{}
 
 	podPhase := string(pod.Status.Phase)
 
-	status = podPhase
+	status := podPhase
 	if pod.Status.Reason != "" {
 		status = pod.Status.Reason
 	}
@@ -312,10 +320,15 @@ func PodDetails(pod *v1.Pod) (readyContainers, totalContainers int, status, rest
 		}
 	}
 
-	restarts = strconv.Itoa(restartCount)
+	restarts := strconv.Itoa(restartCount)
 	if restartCount != 0 && !lastRestartDate.IsZero() {
 		restarts += fmt.Sprintf(" (%s ago)", util.FormatAge(lastRestartDate))
 	}
 
-	return readyContainers, totalContainers, status, restarts
+	return PodInfo{
+		ReadyContainers: readyContainers,
+		TotalContainers: totalContainers,
+		Status:          status,
+		Restarts:        restarts,
+	}
 }

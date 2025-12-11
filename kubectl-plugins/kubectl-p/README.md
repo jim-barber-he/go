@@ -17,11 +17,16 @@ $ kubectl p --help
 ```
   -A, --all-namespaces       List the pods across all namespaces. Overrides --namespace / -n
       --context string       The name of the kubeconfig context to use
-      --grep string          Limit output to pods with names matching this regular expression
+      --match string         Limit output to pods with names matching this regex
   -n, --namespace string     If present, the namespace scope for this CLI request
+      --node string          Limit output to pods running on nodes matching this regex
+      --not-match string     Limit output to pods with names not matching this regex
+      --not-status string    Limit output to pods with a status not matching this regex
       --profile-cpu string   Produce pprof cpu profiling output in supplied file
       --profile-mem string   Produce pprof memory profiling output in supplied file
   -l, --selector string      Selector (label query) to filter on
+      --status string        Limit output to pods with a status matching this regex
+  -v, --version              Print the version of this tool
 ```
 
 ## Comparison to `kubectl get pods`

@@ -47,12 +47,16 @@ type tableRow struct {
 // Commandline options.
 type options struct {
 	allNamespaces bool
-	grep          string
 	kubeContext   string
 	labelSelector string
+	match         string
 	namespace     string
+	node          string
+	notMatch      string
+	notStatus     string
 	profileCPU    string
 	profileMemory string
+	status        string
 	version       bool
 }
 
@@ -66,12 +70,16 @@ func main() {
 		false,
 		"List the pods across all namespaces. Overrides --namespace / -n",
 	)
-	flag.StringVar(&opts.grep, "grep", "", "Limit output to pods with names matching this regular expression")
+	flag.StringVar(&opts.match, "match", "", "Limit output to pods with names matching this regex")
 	flag.StringVar(&opts.kubeContext, "context", "", "The name of the kubeconfig context to use")
 	flag.StringVarP(&opts.labelSelector, "selector", "l", "", "Selector (label query) to filter on")
 	flag.StringVarP(&opts.namespace, "namespace", "n", "", "If present, the namespace scope for this CLI request")
+	flag.StringVar(&opts.node, "node", "", "Limit output to pods running on nodes matching this regex")
+	flag.StringVar(&opts.notMatch, "not-match", "", "Limit output to pods with names not matching this regex")
+	flag.StringVar(&opts.notStatus, "not-status", "", "Limit output to pods with a status not matching this regex")
 	flag.StringVar(&opts.profileCPU, "profile-cpu", "", "Produce pprof cpu profiling output in supplied file")
 	flag.StringVar(&opts.profileMemory, "profile-mem", "", "Produce pprof memory profiling output in supplied file")
+	flag.StringVar(&opts.status, "status", "", "Limit output to pods with a status matching this regex")
 	flag.BoolVarP(&opts.version, "version", "v", false, "Print the version of this tool")
 	flag.Parse()
 
@@ -126,17 +134,55 @@ func run(opts options) error {
 		return err
 	}
 
-	// If the --grep option was passed, then filter out the pods that don't match.
-	if opts.grep != "" {
-		filteredPods := slices.DeleteFunc(pods.Items, func(pod v1.Pod) bool {
-			return !regexp.MustCompile(opts.grep).MatchString(pod.Name)
-		})
-		if len(filteredPods) == 0 {
-			return util.NewError("no matching pods found", "No pod names matched the regular expression: "+opts.grep)
-		}
+	// Remove pods that don't match the various filtering options.
+	podItems := pods.Items
 
-		pods.Items = filteredPods
+	// If the --match option was passed, then filter out the pod names that don't match.
+	if opts.match != "" {
+		re := regexp.MustCompile(opts.match)
+		podItems = slices.DeleteFunc(podItems, func(pod v1.Pod) bool {
+			return !re.MatchString(pod.Name)
+		})
 	}
+
+	// If the --node option was passed, then filter out the pods that aren't on nodes whos names don't match the
+	// regex.
+	if opts.node != "" {
+		re := regexp.MustCompile(opts.node)
+		podItems = slices.DeleteFunc(podItems, func(pod v1.Pod) bool {
+			return !re.MatchString(pod.Spec.NodeName)
+		})
+	}
+
+	// If the --not-match option was passed, then filter out the pod names that match.
+	if opts.notMatch != "" {
+		re := regexp.MustCompile(opts.notMatch)
+		podItems = slices.DeleteFunc(podItems, func(pod v1.Pod) bool {
+			return re.MatchString(pod.Name)
+		})
+	}
+
+	// If the --not-status option was passed, then filter out the pods that match.
+	if opts.notStatus != "" {
+		re := regexp.MustCompile(opts.notStatus)
+		podItems = slices.DeleteFunc(podItems, func(pod v1.Pod) bool {
+			return re.MatchString(k8s.PodDetails(&pod).Status)
+		})
+	}
+
+	// If the --status option was passed, then filter out the pods that don't match.
+	if opts.status != "" {
+		re := regexp.MustCompile(opts.status)
+		podItems = slices.DeleteFunc(podItems, func(pod v1.Pod) bool {
+			return !re.MatchString(k8s.PodDetails(&pod).Status)
+		})
+	}
+
+	if len(podItems) == 0 {
+		return util.NewError("no pods found", "No pods found matching the options passed")
+	}
+
+	pods.Items = podItems
 
 	// Build and display the table for each pod.
 	buildAndDisplayTable(pods, nodes, opts.allNamespaces)
@@ -191,7 +237,7 @@ func createTableRow(pod *v1.Pod, nodes map[string]*v1.Node, allNamespaces bool) 
 	var row tableRow
 
 	// Get details about the containers in the pod.
-	readyContainers, totalContainers, status, restarts := k8s.PodDetails(pod)
+	details := k8s.PodDetails(pod)
 
 	// Build up the table contents.
 	if allNamespaces {
@@ -199,9 +245,9 @@ func createTableRow(pod *v1.Pod, nodes map[string]*v1.Node, allNamespaces bool) 
 	}
 
 	row.Name = pod.Name
-	row.Ready = fmt.Sprintf("%d/%d", readyContainers, totalContainers)
-	row.Status = status
-	row.Restarts = restarts
+	row.Ready = fmt.Sprintf("%d/%d", details.ReadyContainers, details.TotalContainers)
+	row.Status = details.Status
+	row.Restarts = details.Restarts
 	row.Age = util.FormatAge(pod.CreationTimestamp.Time)
 	row.IP = pod.Status.PodIP
 

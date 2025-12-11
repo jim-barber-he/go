@@ -287,7 +287,7 @@ func TestPodDetails(t *testing.T) {
 	}
 
 	// Get the pod details.
-	ready, total, status, restarts := PodDetails(pod)
-	t.Fatalf("[%d] [%d] [%s] [%s]", ready, total, status, restarts)
+	details := PodDetails(pod)
+	t.Fatalf("[%d] [%d] [%s] [%s]", details.ReadyContainers, details.TotalContainers, details.Status, detauls.Restarts)
 }
 */
