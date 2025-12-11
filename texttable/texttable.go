@@ -64,13 +64,14 @@ func (t *Table[R]) Write(w ...io.Writer) {
 		}
 	}
 
-	// Create a tab writer to display the table. Each row needs to consist of tab separated strings.
-	var tw *tabwriter.Writer
+	// Set where to output to.
+	out := io.Writer(os.Stdout)
 	if len(w) > 0 {
-		tw = tabwriter.NewWriter(w[0], tableMinWidth, tableTabWidth, tablePadding, tablePadChar, tableFlags)
-	} else {
-		tw = tabwriter.NewWriter(os.Stdout, tableMinWidth, tableTabWidth, tablePadding, tablePadChar, tableFlags)
+		out = w[0]
 	}
+
+	// Create a tab writer to display the table. Each row needs to consist of tab separated strings.
+	tw := tabwriter.NewWriter(out, tableMinWidth, tableTabWidth, tablePadding, tablePadChar, tableFlags)
 
 	// Add the title row of the table skipping any `omitempty` columns where all its values are empty.
 	var s []string
