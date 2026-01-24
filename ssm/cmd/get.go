@@ -14,15 +14,20 @@ import (
 
 // Commandline options.
 type getOptions struct {
-	full bool
-	json bool
+	brief bool
+	full  bool
+	json  bool
 }
 
 var getLong = heredoc.Doc(`
 	Retrieve a parameter from the AWS SSM parameter store for a given environment.
 
-	By default it will retrieve just the parameter's value.
+	By default it will retrieve and show just the parameter's value.
+	Passing the --brief flag will show the parameter name and value.
 	Passing the --full flag will show all sorts of details about the parameter including its value.
+	Passing the --json flag will output the result in JSON format.
+
+	It doesn't make sense to pass both the --brief and --full flags together.
 
 	You can also add a :$VERSION_NUMBER suffix to the parameter name to retrieve a specific version of a parameter.
 `)
@@ -34,7 +39,12 @@ var (
 		Short: "Retrieve a parameter from the AWS SSM parameter store",
 		Long:  getLong,
 		Args:  cobra.ExactArgs(2),
-		PreRunE: func(_ *cobra.Command, args []string) error {
+		PreRunE: func(cmd *cobra.Command, args []string) error {
+			err := validateGetOptions(cmd)
+			if err != nil {
+				return err
+			}
+
 			return validateEnvironment(args[0])
 		},
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -52,6 +62,7 @@ var (
 func init() {
 	rootCmd.AddCommand(getCmd)
 
+	getCmd.Flags().BoolVar(&getOpts.brief, "brief", false, "Show the parameter name and value")
 	getCmd.Flags().BoolVarP(&getOpts.full, "full", "f", false, "Show all details for the parameter")
 	getCmd.Flags().BoolVar(&getOpts.json, "json", false, "Output the parameter in JSON format")
 }
@@ -74,6 +85,15 @@ func getCompletionHelp(args []string) ([]string, cobra.ShellCompDirective) {
 	return completionHelp, cobra.ShellCompDirectiveNoFileComp
 }
 
+// validateGetOptions validates the list command options.
+func validateGetOptions(cmd *cobra.Command) error {
+	if getOpts.brief && getOpts.full {
+		return newBriefAndFullError(cmd.UsageString())
+	}
+
+	return nil
+}
+
 // doGet fetches a parameter from the SSM parameter store.
 // args[0] is the name of the AWS Profile to use when accessing the SSM parameter store.
 // args[1] is the path of the SSM parameter to get.
@@ -94,19 +114,31 @@ func doGet(ctx context.Context, args []string) error {
 		return fmt.Errorf("%w: %w", errGetSSMParameter, err)
 	}
 
-	if getOpts.full {
-		par.Print(false, getOpts.json)
-	} else {
-		if getOpts.json {
-			jsonData, err := util.MarshalWithFields(par, "value")
-			if err != nil {
-				return fmt.Errorf("failed to marshal parameter value to JSON: %w", err)
-			}
-
-			fmt.Println(string(jsonData))
-		} else {
-			fmt.Println(par.Value)
+	switch {
+	case getOpts.brief && getOpts.json:
+		b, err := util.MarshalWithFields(par, "name", "value")
+		if err != nil {
+			return fmt.Errorf("failed to marshal parameter to JSON: %w", err)
 		}
+
+		fmt.Println(string(b))
+
+	case getOpts.brief:
+		fmt.Printf("%s = %s\n", par.Name, par.Value)
+
+	case getOpts.full:
+		par.Print(false, getOpts.json)
+
+	case getOpts.json:
+		b, err := util.MarshalWithFields(par, "value")
+		if err != nil {
+			return fmt.Errorf("failed to marshal parameter to JSON: %w", err)
+		}
+
+		fmt.Println(string(b))
+
+	default:
+		fmt.Println(par.Value)
 	}
 
 	return nil

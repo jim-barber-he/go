@@ -24,7 +24,7 @@ func TestGetNamespace(t *testing.T) {
 	t.Parallel()
 
 	// Create a fake client.
-	client := fake.NewSimpleClientset()
+	client := fake.NewClientset()
 
 	// Create a fake namespace.
 	ns := &v1.Namespace{
@@ -54,7 +54,7 @@ func TestGetNode(t *testing.T) {
 	t.Parallel()
 
 	// Create a fake client.
-	client := fake.NewSimpleClientset()
+	client := fake.NewClientset()
 
 	// Create a fake node.
 	node := &v1.Node{
@@ -202,7 +202,7 @@ func TestListNodes(t *testing.T) {
 	t.Parallel()
 
 	// Create a fake client.
-	client := fake.NewSimpleClientset()
+	client := fake.NewClientset()
 
 	// Create a fake node.
 	node := &v1.Node{
@@ -236,7 +236,7 @@ func TestListPods(t *testing.T) {
 	t.Parallel()
 
 	// Create a fake client.
-	client := fake.NewSimpleClientset()
+	client := fake.NewClientset()
 
 	// Create a fake pod.
 	pod := &v1.Pod{
@@ -272,7 +272,7 @@ func TestPodDetails(t *testing.T) {
 	t.Parallel()
 
 	// Create a fake client.
-	client := fake.NewSimpleClientset()
+	client := fake.NewClientset()
 
 	// Create a fake pod.
 	pod := &v1.Pod{

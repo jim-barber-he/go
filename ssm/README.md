@@ -76,7 +76,8 @@ Usage:
   ssm delete [flags] ENVIRONMENT PARAMEMETER
 
 Flags:
-  -h, --help   help for delete
+  -h, --help      help for delete
+  -v, --verbose   Enable verbose output
 
 Global Flags:
       --profile string   AWS profile to use
@@ -92,9 +93,10 @@ Usage:
   ssm get [flags] ENVIRONMENT PARAMETER[:VERSION_NUMBER]
 
 Flags:
-  -f, --full   Show all details for the parameter
-  -h, --help   help for get
-      --json   Output the parameter in JSON format
+      --brief   Show the parameter name and value
+  -f, --full    Show all details for the parameter
+  -h, --help    help for get
+      --json    Output the parameter in JSON format
 
 Global Flags:
       --profile string   AWS profile to use

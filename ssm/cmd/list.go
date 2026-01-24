@@ -37,6 +37,8 @@ var listLong = heredoc.Doc(`
 
 	If the --json flag is specified, then the output will be formatted as JSON.
 
+	If the --no-value flag is specified, then the parameter values will not be shown.
+
 	The --safe-decrypt flag is slower, but can handle if you have SecureStrings in your SSM parameter store that
 	can't be decrypted due to their KMS key being inaccessible or deleted.
 
