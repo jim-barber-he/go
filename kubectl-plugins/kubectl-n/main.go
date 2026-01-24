@@ -23,6 +23,18 @@ import (
 
 const tick = "\u2713"
 
+// regexValue is a custom flag type for regex strings.
+type regexValue string
+
+// Implement the pflag.Value interface for regexValue.
+func (r *regexValue) Set(s string) error {
+	*r = regexValue(s)
+
+	return nil
+}
+func (r *regexValue) String() string { return string(*r) }
+func (r *regexValue) Type() string   { return "regex" }
+
 // tableRow represents a row in the output table.
 type tableRow struct {
 	Name          string `title:"NAME"`
@@ -42,8 +54,18 @@ type tableRow struct {
 }
 
 func main() {
-	instanceGroup := flag.String("instance-group", "", "Filter nodes by instance group regex")
-	instanceType := flag.String("instance-type", "", "Filter nodes by instance type regex")
+	var (
+		instanceGroup regexValue
+		instanceType  regexValue
+		ip            regexValue
+		name          regexValue
+	)
+
+	flag.Var(&instanceGroup, "instance-group", "Filter nodes by instance group regex")
+	flag.Var(&instanceType, "instance-type", "Filter nodes by instance type regex")
+	flag.Var(&ip, "ip", "Filter nodes by IP address regex")
+	flag.Var(&name, "name", "Filter nodes by name regex")
+
 	kubeContext := flag.String("context", "", "The name of the kubeconfig context to use")
 	version := flag.BoolP("version", "v", false, "Display the version of this tool")
 	wide := flag.BoolP("wide", "w", false, "Add KernelVersion, OSImage, and Architecture columns")
@@ -63,25 +85,42 @@ func main() {
 		log.Fatalf("Error listing nodes: %v", err)
 	}
 
-	if *instanceGroup != "" {
-		filteredNodes := slices.DeleteFunc(nodes.Items, func(node v1.Node) bool {
-			return !regexp.MustCompile(*instanceGroup).MatchString(node.Labels["kops.k8s.io/instancegroup"])
-		})
+	// Remove pods that don't match the various filtering options.
+	nodeItems := nodes.Items
 
-		nodes.Items = filteredNodes
+	if instanceGroup != "" {
+		re := regexp.MustCompile(string(instanceGroup))
+		nodeItems = slices.DeleteFunc(nodeItems, func(node v1.Node) bool {
+			return !re.MatchString(node.Labels["kops.k8s.io/instancegroup"])
+		})
 	}
 
-	if *instanceType != "" {
-		filteredNodes := slices.DeleteFunc(nodes.Items, func(node v1.Node) bool {
-			return !regexp.MustCompile(*instanceType).MatchString(node.Labels["node.kubernetes.io/instance-type"])
+	if instanceType != "" {
+		re := regexp.MustCompile(string(instanceType))
+		nodeItems = slices.DeleteFunc(nodeItems, func(node v1.Node) bool {
+			return !re.MatchString(node.Labels["node.kubernetes.io/instance-type"])
 		})
-
-		nodes.Items = filteredNodes
 	}
 
-	if len(nodes.Items) == 0 {
+	if ip != "" {
+		re := regexp.MustCompile(string(ip))
+		nodeItems = slices.DeleteFunc(nodeItems, func(node v1.Node) bool {
+			return !re.MatchString(node.Annotations["alpha.kubernetes.io/provided-node-ip"])
+		})
+	}
+
+	if name != "" {
+		re := regexp.MustCompile(string(name))
+		nodeItems = slices.DeleteFunc(nodeItems, func(node v1.Node) bool {
+			return !re.MatchString(node.Name)
+		})
+	}
+
+	if len(nodeItems) == 0 {
 		log.Fatal("No nodes found")
 	}
+
+	nodes.Items = nodeItems
 
 	var tbl texttable.Table[*tableRow]
 

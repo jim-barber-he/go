@@ -20,6 +20,14 @@ var (
 	errValueWithFile     = errors.New("VALUE should not be provided when --file is used")
 )
 
+// newBriefAndFullError creates a new error for when the --brief and --full options are both specified.
+func newBriefAndFullError(usage string) error {
+	return &util.Error{
+		Msg:   "it does not make sense to specify both --brief and --full\n",
+		Param: usage,
+	}
+}
+
 // newFullAndVerboseError creates a new error for when the --full and --verbose options are both specified.
 func newFullAndVerboseError(usage string) error {
 	return &util.Error{

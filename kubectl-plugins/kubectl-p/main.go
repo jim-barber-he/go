@@ -28,6 +28,30 @@ import (
 
 const tick = "\u2713"
 
+// filePath is a custom flag type for file paths.
+type filePath string
+
+// Implement the pflag.Value interface for filePath.
+func (f *filePath) Set(s string) error {
+	*f = filePath(s)
+
+	return nil
+}
+func (f *filePath) String() string { return string(*f) }
+func (f *filePath) Type() string   { return "filename" }
+
+// regexValue is a custom flag type for regex strings.
+type regexValue string
+
+// Implement the pflag.Value interface for regexValue.
+func (r *regexValue) Set(s string) error {
+	*r = regexValue(s)
+
+	return nil
+}
+func (r *regexValue) String() string { return string(*r) }
+func (r *regexValue) Type() string   { return "regex" }
+
 var errNoPodsFound = errors.New("no pods found")
 
 // tableRow represents a row in the output table.
@@ -47,16 +71,17 @@ type tableRow struct {
 // Commandline options.
 type options struct {
 	allNamespaces bool
+	ip            regexValue
 	kubeContext   string
 	labelSelector string
-	name          string
+	name          regexValue
 	namespace     string
-	node          string
-	notName       string
-	notStatus     string
-	profileCPU    string
-	profileMemory string
-	status        string
+	node          regexValue
+	notName       regexValue
+	notStatus     regexValue
+	profileCPU    filePath
+	profileMemory filePath
+	status        regexValue
 	version       bool
 }
 
@@ -71,15 +96,16 @@ func main() {
 		"List the pods across all namespaces. Overrides --namespace / -n",
 	)
 	flag.StringVar(&opts.kubeContext, "context", "", "The name of the kubeconfig context to use")
+	flag.Var(&opts.ip, "ip", "Limit output to pods with an IP address matching this regex")
 	flag.StringVarP(&opts.labelSelector, "selector", "l", "", "Selector (label query) to filter on")
-	flag.StringVar(&opts.name, "name", "", "Limit output to pods with names matching this regex")
+	flag.Var(&opts.name, "name", "Limit output to pods with names matching this regex")
 	flag.StringVarP(&opts.namespace, "namespace", "n", "", "If present, the namespace scope for this CLI request")
-	flag.StringVar(&opts.node, "node", "", "Limit output to pods running on nodes matching this regex")
-	flag.StringVar(&opts.notName, "not-name", "", "Limit output to pods with names not matching this regex")
-	flag.StringVar(&opts.notStatus, "not-status", "", "Limit output to pods with a status not matching this regex")
-	flag.StringVar(&opts.profileCPU, "profile-cpu", "", "Produce pprof cpu profiling output in supplied file")
-	flag.StringVar(&opts.profileMemory, "profile-mem", "", "Produce pprof memory profiling output in supplied file")
-	flag.StringVar(&opts.status, "status", "", "Limit output to pods with a status matching this regex")
+	flag.Var(&opts.node, "node", "Limit output to pods running on nodes matching this regex")
+	flag.Var(&opts.notName, "not-name", "Limit output to pods with names not matching this regex")
+	flag.Var(&opts.notStatus, "not-status", "Limit output to pods with a status not matching this regex")
+	flag.Var(&opts.profileCPU, "profile-cpu", "Produce pprof cpu profiling output in supplied file")
+	flag.Var(&opts.profileMemory, "profile-mem", "Produce pprof memory profiling output in supplied file")
+	flag.Var(&opts.status, "status", "Limit output to pods with a status matching this regex")
 	flag.BoolVarP(&opts.version, "version", "v", false, "Print the version of this tool")
 	flag.Parse()
 
@@ -101,7 +127,7 @@ func main() {
 func run(opts options) error {
 	// CPU profiling.
 	if opts.profileCPU != "" {
-		fp, err := os.Create(opts.profileCPU)
+		fp, err := os.Create(string(opts.profileCPU))
 		if err != nil {
 			return fmt.Errorf("failed to create CPU profile file: %w", err)
 		}
@@ -137,9 +163,17 @@ func run(opts options) error {
 	// Remove pods that don't match the various filtering options.
 	podItems := pods.Items
 
+	// If the --ip option was passed, then filter out the pod IPs that don't match.
+	if opts.ip != "" {
+		re := regexp.MustCompile(string(opts.ip))
+		podItems = slices.DeleteFunc(podItems, func(pod v1.Pod) bool {
+			return !re.MatchString(pod.Status.PodIP)
+		})
+	}
+
 	// If the --name option was passed, then filter out the pod names that don't match.
 	if opts.name != "" {
-		re := regexp.MustCompile(opts.name)
+		re := regexp.MustCompile(string(opts.name))
 		podItems = slices.DeleteFunc(podItems, func(pod v1.Pod) bool {
 			return !re.MatchString(pod.Name)
 		})
@@ -148,7 +182,7 @@ func run(opts options) error {
 	// If the --node option was passed, then filter out the pods that aren't on nodes whos names don't match the
 	// regex.
 	if opts.node != "" {
-		re := regexp.MustCompile(opts.node)
+		re := regexp.MustCompile(string(opts.node))
 		podItems = slices.DeleteFunc(podItems, func(pod v1.Pod) bool {
 			return !re.MatchString(pod.Spec.NodeName)
 		})
@@ -156,7 +190,7 @@ func run(opts options) error {
 
 	// If the --not-name option was passed, then filter out the pod names that match.
 	if opts.notName != "" {
-		re := regexp.MustCompile(opts.notName)
+		re := regexp.MustCompile(string(opts.notName))
 		podItems = slices.DeleteFunc(podItems, func(pod v1.Pod) bool {
 			return re.MatchString(pod.Name)
 		})
@@ -164,7 +198,7 @@ func run(opts options) error {
 
 	// If the --not-status option was passed, then filter out the pods that match.
 	if opts.notStatus != "" {
-		re := regexp.MustCompile(opts.notStatus)
+		re := regexp.MustCompile(string(opts.notStatus))
 		podItems = slices.DeleteFunc(podItems, func(pod v1.Pod) bool {
 			return re.MatchString(k8s.PodDetails(&pod).Status)
 		})
@@ -172,7 +206,7 @@ func run(opts options) error {
 
 	// If the --status option was passed, then filter out the pods that don't match.
 	if opts.status != "" {
-		re := regexp.MustCompile(opts.status)
+		re := regexp.MustCompile(string(opts.status))
 		podItems = slices.DeleteFunc(podItems, func(pod v1.Pod) bool {
 			return !re.MatchString(k8s.PodDetails(&pod).Status)
 		})
@@ -189,7 +223,7 @@ func run(opts options) error {
 
 	// Memory profiling.
 	if opts.profileMemory != "" {
-		fp, err := os.Create(opts.profileMemory)
+		fp, err := os.Create(string(opts.profileMemory))
 		if err != nil {
 			return fmt.Errorf("failed to create memory profile file: %w", err)
 		}
