@@ -4,7 +4,9 @@ import (
 	"cmp"
 	"context"
 	"fmt"
+	"path"
 	"slices"
+	"strings"
 
 	"github.com/MakeNowJust/heredoc/v2"
 	"github.com/aws/aws-sdk-go-v2/service/ssm"
@@ -15,6 +17,7 @@ import (
 
 // Commandline options.
 type listOptions struct {
+	env         bool
 	full        bool
 	json        bool
 	noValue     bool
@@ -33,7 +36,12 @@ var listLong = heredoc.Doc(`
 
 	If the --recursive flag is used then it will also show all parameters in the paths below the specified path.
 
+	If the --env flag is specified the output will be formatted as environment variables,
+	with the parameter names converted to uppercase and values quoted.
+	This option cannot be used with the --full, --json, or --verbose flags.
+
 	If the --full flag is specified, then more details about each parameter will be shown.
+	This option cannot be used with the --verbose flag.
 
 	If the --json flag is specified, then the output will be formatted as JSON.
 
@@ -44,7 +52,6 @@ var listLong = heredoc.Doc(`
 
 	If the --verbose flag is specified, then each parameter will be listed over multiple lines against the
 	'Name', 'Value', and 'Type' fields.
-	This option cannot be used with the --full flag.
 
 	If no PATH is passed at all, then for the 'dev', 'test*', and 'prod*' environments it will look in
 	'/helm/minikube/', '/helm/test*/', or '/helm/prod*/' respectively.
@@ -80,14 +87,17 @@ var (
 func init() {
 	rootCmd.AddCommand(listCmd)
 
+	listCmd.Flags().BoolVar(&listOpts.env, "env", false, "Display the output formatted as environment variables")
 	listCmd.Flags().BoolVarP(&listOpts.full, "full", "f", false, "Show additional details for each parameter")
-	listCmd.Flags().BoolVar(&listOpts.json, "json", false, "Display the output as JSON (with --full or --verbose only)")
+	listCmd.Flags().BoolVar(&listOpts.json, "json", false, "Display the output as JSON")
 	listCmd.Flags().BoolVarP(&listOpts.noValue, "no-value", "n", false, "Do not show the parameter value")
 	listCmd.Flags().BoolVarP(
 		&listOpts.recursive, "recursive", "r", false, "Recursively list parameters below the parameter store path",
 	)
 	listCmd.Flags().BoolVarP(&listOpts.safeDecrypt, "safe-decrypt", "s", false, "Slower decrypt that can handle errors")
-	listCmd.Flags().BoolVarP(&listOpts.verbose, "verbose", "v", false, "Show Name, Value, and Type fields for each parameter")
+	listCmd.Flags().BoolVarP(
+		&listOpts.verbose, "verbose", "v", false, "Show Name, Value, and Type fields for each parameter",
+	)
 }
 
 // listCompletionHelp provides shell completion help for the delete command.
@@ -108,12 +118,12 @@ func listCompletionHelp(args []string) ([]string, cobra.ShellCompDirective) {
 
 // validateListOptions validates the list command options.
 func validateListOptions(cmd *cobra.Command) error {
-	if listOpts.full && listOpts.verbose {
-		return newFullAndVerboseError(cmd.UsageString())
+	if listOpts.env && (listOpts.full || listOpts.json || listOpts.verbose) {
+		return newEnvUsageError(cmd.UsageString())
 	}
 
-	if listOpts.json && !listOpts.full && !listOpts.verbose {
-		return newJSONUsageError(cmd.UsageString())
+	if listOpts.full && listOpts.verbose {
+		return newFullAndVerboseError(cmd.UsageString())
 	}
 
 	return nil
@@ -158,6 +168,8 @@ func displayListParameters(params []aws.SSMParameter) {
 		switch {
 		case listOpts.full:
 			param.Print(listOpts.noValue, listOpts.json)
+		case listOpts.json:
+			displayJSON(param)
 		case listOpts.verbose:
 			displayVerbose(param)
 		default:
@@ -172,35 +184,33 @@ func displayListParameters(params []aws.SSMParameter) {
 
 // displayDefault is a helper function to display a parameter in a one line format.
 func displayDefault(param aws.SSMParameter) {
+	varLine := fmt.Sprintf("%s = %s", param.Name, param.Value)
+	varName := param.Name
+
+	if listOpts.env {
+		varName = strings.ToUpper(path.Base(param.Name))
+		varLine = fmt.Sprintf("%s=%q", varName, param.Value)
+	}
+
 	if listOpts.noValue {
-		fmt.Println(param.Name)
+		fmt.Println(varName)
 	} else {
-		fmt.Printf("%s = %s\n", param.Name, param.Value)
+		fmt.Printf("%s\n", varLine)
 	}
 }
 
-// displayVerbose is a helper function to display a parameter in the verbose format.
-func displayVerbose(param aws.SSMParameter) {
-	if listOpts.json {
-		displayVerboseJSON(param)
-	} else {
-		displayVerboseText(param)
-	}
-}
-
-// displayVerboseJSON is a helper function to display a parameter in default JSON format.
-func displayVerboseJSON(param aws.SSMParameter) {
-	var (
-		err      error
-		jsonData []byte
-	)
-
-	if listOpts.noValue {
-		jsonData, err = util.MarshalWithFields(param, "name", "type")
-	} else {
-		jsonData, err = util.MarshalWithFields(param, "name", "type", "value")
+// displayJSON is a helper function to display a parameter in JSON format.
+func displayJSON(param aws.SSMParameter) {
+	fields := []string{"name"}
+	if listOpts.verbose {
+		fields = append(fields, "type")
 	}
 
+	if !listOpts.noValue {
+		fields = append(fields, "value")
+	}
+
+	jsonData, err := util.MarshalWithFields(param, fields...)
 	if err != nil {
 		fmt.Printf("Error: failed to marshal parameter to JSON: %v\n", err)
 	}
@@ -208,8 +218,8 @@ func displayVerboseJSON(param aws.SSMParameter) {
 	fmt.Println(string(jsonData))
 }
 
-// displayVerboseText is a helper function to display a parameter in default text format.
-func displayVerboseText(param aws.SSMParameter) {
+// displayVerbose is a helper function to display a parameter showing its value and type on separate lines.
+func displayVerbose(param aws.SSMParameter) {
 	fmt.Printf("Name: %s\n", param.Name)
 
 	if !listOpts.noValue {

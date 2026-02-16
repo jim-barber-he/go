@@ -17,6 +17,7 @@ $ kubectl p --help
 ```
   -A, --all-namespaces         List the pods across all namespaces. Overrides --namespace / -n
       --context string         The name of the kubeconfig context to use
+      --instance-group regex   Limit output to pods running on nodes with an instance group matching this regex
       --ip regex               Limit output to pods with an IP address matching this regex
       --name regex             Limit output to pods with names matching this regex
   -n, --namespace string       If present, the namespace scope for this CLI request

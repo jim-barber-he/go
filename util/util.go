@@ -313,7 +313,7 @@ func WrapLine(str string, width int) string {
 	pos := 0
 	prevWord := ""
 
-	for _, word := range strings.Split(str, " ") {
+	for word := range strings.SplitSeq(str, " ") {
 		wordLength := len(word)
 
 		// Preserve leading spaces which end up as empty words when split on a space.
@@ -384,7 +384,7 @@ func WrapTextToWidth(width int, str string) string {
 		paragraphs []string
 	)
 
-	for _, line := range strings.Split(str, "\n") {
+	for line := range strings.SplitSeq(str, "\n") {
 		if line != "" {
 			// Add the line just read to the existing line since it is part of the same paragraph.
 			if paragraph.Len() != 0 {

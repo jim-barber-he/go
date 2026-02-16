@@ -8,6 +8,9 @@ build clean install run:
 	$(MAKE) -C kubectl-plugins/kubectl-p $@
 	$(MAKE) -C ssm $@
 
+fix:
+	go fix --diff ./...
+
 lint lintall vet:
 	$(MAKE) -C aws $@
 	$(MAKE) -C golock $@
