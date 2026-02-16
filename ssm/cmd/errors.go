@@ -28,6 +28,14 @@ func newBriefAndFullError(usage string) error {
 	}
 }
 
+// newEnvUsageError creates a new error for when the --env flag is specified with an invalid flag.
+func newEnvUsageError(usage string) error {
+	return &util.Error{
+		Msg:   "Cannot use --env with --full, --json, nor --verbose\n",
+		Param: usage,
+	}
+}
+
 // newFullAndVerboseError creates a new error for when the --full and --verbose options are both specified.
 func newFullAndVerboseError(usage string) error {
 	return &util.Error{
@@ -51,12 +59,4 @@ func newInvalidTierError() error {
 	}
 
 	return errors.New("invalid tier specified. Must be one of: " + strings.Join(ssmTiersStr, ", "))
-}
-
-// newJSONUsageError creates a new error for when the --json option is specified with the default one line output.
-func newJSONUsageError(usage string) error {
-	return &util.Error{
-		Msg:   "it does not make sense to specify --json without --full or --verbose\n",
-		Param: usage,
-	}
 }

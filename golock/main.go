@@ -212,14 +212,17 @@ func run() int {
 	}
 
 	// Acquire lock.
-	acquired, err := rdb.SetNX(ctx, redisKey, expireAtMax, time.Duration(lockRelease)*time.Second).Result()
+	acquired, err := rdb.SetArgs(ctx, redisKey, expireAtMax, redis.SetArgs{
+		Mode: "NX",
+		TTL:  time.Duration(lockRelease) * time.Second,
+	}).Result()
 	if err != nil {
 		slog.Error(err.Error())
 
 		return exitFailure
 	}
 
-	if acquired {
+	if acquired == "OK" {
 		slog.Debug(fmt.Sprintf("Lock %s acquired", redisKey))
 	} else { // Handle edge cases.
 		expiresAt, err := rdb.Get(ctx, redisKey).Result()
@@ -252,7 +255,10 @@ func run() int {
 		// Handle expired locks that were not cleaned up properly or not cleaned up yet because the golock that
 		// requested it is still running.
 		// Try to acquire a lock again, confirming that no other running golock beats us to it.
-		reacquire, err := rdb.GetSet(ctx, redisKey, expireAtMax).Result()
+		reacquire, err := rdb.SetArgs(ctx, redisKey, expireAtMax, redis.SetArgs{
+			Get:     true,
+			KeepTTL: true,
+		}).Result()
 		if err != nil {
 			slog.Error(fmt.Errorf("failed to acquire lock: %w", err).Error())
 
@@ -294,7 +300,10 @@ func run() int {
 	// This is for the benefit of other instances of golock trying to acquire a lock and being able to say when the
 	// current one is expiring.
 	slog.Debug(fmt.Sprintf("Lock %s set minimum grace period to: %d", redisKey, expireAtMin))
-	_, _ = rdb.GetSet(ctx, redisKey, expireAtMin).Result()
+	_, _ = rdb.SetArgs(ctx, redisKey, expireAtMin, redis.SetArgs{
+		Get:     true,
+		KeepTTL: true,
+	}).Result()
 
 	// Set the key to expire after the minimum grace period has passed.
 	slog.Debug(fmt.Sprintf("Lock %s set to expire at: %d", redisKey, expireAtMin))

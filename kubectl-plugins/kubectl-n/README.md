@@ -18,11 +18,13 @@ It also sorts the nodes by their instance group name; then by the AZ; and finall
 kubectl n --help
 ```
 ```
+      --arch regex             Filter nodes by architecture regex
       --context string         The name of the kubeconfig context to use
       --instance-group regex   Filter nodes by instance group regex
       --instance-type regex    Filter nodes by instance type regex
       --ip regex               Filter nodes by IP address regex
       --name regex             Filter nodes by name regex
+      --unhealthy              Only show nodes where the status is not OK
   -v, --version                Display the version of this tool
   -w, --wide                   Add KernelVersion, OSImage, and Architecture columns
 ```

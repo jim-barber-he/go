@@ -55,18 +55,21 @@ type tableRow struct {
 
 func main() {
 	var (
+		arch          regexValue
 		instanceGroup regexValue
 		instanceType  regexValue
 		ip            regexValue
 		name          regexValue
 	)
 
+	flag.Var(&arch, "arch", "Filter nodes by architecture regex")
 	flag.Var(&instanceGroup, "instance-group", "Filter nodes by instance group regex")
 	flag.Var(&instanceType, "instance-type", "Filter nodes by instance type regex")
 	flag.Var(&ip, "ip", "Filter nodes by IP address regex")
 	flag.Var(&name, "name", "Filter nodes by name regex")
 
 	kubeContext := flag.String("context", "", "The name of the kubeconfig context to use")
+	unhealthy := flag.Bool("unhealthy", false, "Only show nodes where the status is not OK")
 	version := flag.BoolP("version", "v", false, "Display the version of this tool")
 	wide := flag.BoolP("wide", "w", false, "Add KernelVersion, OSImage, and Architecture columns")
 
@@ -88,10 +91,22 @@ func main() {
 	// Remove pods that don't match the various filtering options.
 	nodeItems := nodes.Items
 
+	if arch != "" {
+		re := regexp.MustCompile(string(arch))
+		nodeItems = slices.DeleteFunc(nodeItems, func(node v1.Node) bool {
+			return !re.MatchString(node.Status.NodeInfo.Architecture)
+		})
+	}
+
 	if instanceGroup != "" {
 		re := regexp.MustCompile(string(instanceGroup))
 		nodeItems = slices.DeleteFunc(nodeItems, func(node v1.Node) bool {
-			return !re.MatchString(node.Labels["kops.k8s.io/instancegroup"])
+			return !re.MatchString(
+				cmp.Or(
+					node.Labels["kops.k8s.io/instancegroup"],
+					node.Labels["eks.amazonaws.com/nodegroup"],
+				),
+			)
 		})
 	}
 
@@ -132,6 +147,11 @@ func main() {
 		// Keep track of any warning messages for the node and a status to reflect if there are problems.
 		status, messages := getNodeStatus(node.Status.Conditions)
 		warnings[node.Name] = messages
+
+		// If the --unhealthy flag is set don't include nodes that are OK.
+		if *unhealthy && status == tick {
+			continue
+		}
 
 		if node.Spec.Unschedulable {
 			status += " *"

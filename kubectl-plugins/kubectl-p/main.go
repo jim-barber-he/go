@@ -71,6 +71,7 @@ type tableRow struct {
 // Commandline options.
 type options struct {
 	allNamespaces bool
+	instanceGroup regexValue
 	ip            regexValue
 	kubeContext   string
 	labelSelector string
@@ -96,6 +97,10 @@ func main() {
 		"List the pods across all namespaces. Overrides --namespace / -n",
 	)
 	flag.StringVar(&opts.kubeContext, "context", "", "The name of the kubeconfig context to use")
+	flag.Var(
+		&opts.instanceGroup,
+		"instance-group", "Limit output to pods running on nodes with an instance group matching this regex",
+	)
 	flag.Var(&opts.ip, "ip", "Limit output to pods with an IP address matching this regex")
 	flag.StringVarP(&opts.labelSelector, "selector", "l", "", "Selector (label query) to filter on")
 	flag.Var(&opts.name, "name", "Limit output to pods with names matching this regex")
@@ -162,6 +167,19 @@ func run(opts options) error {
 
 	// Remove pods that don't match the various filtering options.
 	podItems := pods.Items
+
+	// If the --instance-group option was passed, then filter out the pods that aren't on nodes matching regex.
+	if opts.instanceGroup != "" {
+		re := regexp.MustCompile(string(opts.instanceGroup))
+		podItems = slices.DeleteFunc(podItems, func(pod v1.Pod) bool {
+			return !re.MatchString(
+				cmp.Or(
+					nodes[pod.Spec.NodeName].Labels["kops.k8s.io/instancegroup"],
+					nodes[pod.Spec.NodeName].Labels["eks.amazonaws.com/nodegroup"],
+				),
+			)
+		})
+	}
 
 	// If the --ip option was passed, then filter out the pod IPs that don't match.
 	if opts.ip != "" {
