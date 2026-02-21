@@ -27,10 +27,11 @@ type PodInfo struct {
 }
 
 var (
-	errGettingNamespace = errors.New("error getting namespace")
-	errGettingNode      = errors.New("error getting node")
-	errGettingNodes     = errors.New("error getting nodes")
-	errGettingPods      = errors.New("error getting pods")
+	errGettingNamespace    = errors.New("error getting namespace")
+	errGettingNode         = errors.New("error getting node")
+	errGettingNodes        = errors.New("error getting nodes")
+	errGettingPods         = errors.New("error getting pods")
+	errKubeContextNotFound = errors.New("context not found in kubeconfig")
 )
 
 // buildConfigFromFlags creates a Kubernetes client configuration from the provided kubeconfig path and context.
@@ -167,7 +168,7 @@ func Namespace(kubeContext string) string {
 
 	context, exists := config.Contexts[kubeContext]
 	if !exists {
-		panic(util.NewError("context not found in kubeconfig", kubeContext))
+		panic(fmt.Errorf("%w: %s", errKubeContextNotFound, kubeContext))
 	}
 
 	ns := context.Namespace

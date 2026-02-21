@@ -1,6 +1,5 @@
 /*
 Package aws implements functions to interact with Amazon Web Services.
-This part handles AWS SSO logins.
 */
 package aws
 
@@ -542,7 +541,7 @@ func getCacheFilePath(ssoSessionName, ssoStartURL string) (string, error) {
 func readCacheFile(cacheFilePath string) (*ssoCacheData, error) {
 	data, err := os.ReadFile(cacheFilePath) //nolint:gosec // G304: Potential file inclusion via variable.
 	if err != nil {
-		return nil, fmt.Errorf("%w: %w", errReadCacheFile, err)
+		return nil, fmt.Errorf("%w: %w", errCacheFileRead, err)
 	}
 
 	var cache ssoCacheData

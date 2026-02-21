@@ -28,6 +28,8 @@ import (
 
 const tick = "\u2713"
 
+var errNoPodsFound = errors.New("no pods found")
+
 // filePath is a custom flag type for file paths.
 type filePath string
 
@@ -51,8 +53,6 @@ func (r *regexValue) Set(s string) error {
 }
 func (r *regexValue) String() string { return string(*r) }
 func (r *regexValue) Type() string   { return "regex" }
-
-var errNoPodsFound = errors.New("no pods found")
 
 // tableRow represents a row in the output table.
 type tableRow struct {
@@ -231,7 +231,7 @@ func run(opts options) error {
 	}
 
 	if len(podItems) == 0 {
-		return util.NewError("no pods found", "No pods found matching the options passed")
+		return fmt.Errorf("%w: No pods found matching the options passed", errNoPodsFound)
 	}
 
 	pods.Items = podItems

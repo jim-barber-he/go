@@ -39,8 +39,8 @@ var (
 		Short: "Retrieve a parameter from the AWS SSM parameter store",
 		Long:  getLong,
 		Args:  cobra.ExactArgs(2),
-		PreRunE: func(cmd *cobra.Command, args []string) error {
-			err := validateGetOptions(cmd)
+		PreRunE: func(_ *cobra.Command, args []string) error {
+			err := validateGetOptions()
 			if err != nil {
 				return err
 			}
@@ -86,9 +86,9 @@ func getCompletionHelp(args []string) ([]string, cobra.ShellCompDirective) {
 }
 
 // validateGetOptions validates the list command options.
-func validateGetOptions(cmd *cobra.Command) error {
+func validateGetOptions() error {
 	if getOpts.brief && getOpts.full {
-		return newBriefAndFullError(cmd.UsageString())
+		return newBriefAndFullError()
 	}
 
 	return nil

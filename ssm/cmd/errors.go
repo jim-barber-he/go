@@ -2,10 +2,10 @@ package cmd
 
 import (
 	"errors"
+	"fmt"
 	"strings"
 
 	"github.com/aws/aws-sdk-go-v2/service/ssm/types"
-	"github.com/jim-barber-he/go/util"
 )
 
 var (
@@ -13,6 +13,9 @@ var (
 	errInvalidDataType = errors.New(
 		"invalid data-type specified. Must be one of: text, aws:ec2:image, or aws:ssm:integration",
 	)
+	errInvalidEnv        = errors.New("invalid environment specified")
+	errInvalidParamCombo = errors.New("invalid parameter combination")
+	errInvalidTier       = errors.New("invalid tier specified")
 	errListSSMParameters = errors.New("failed to list SSM parameters")
 	errPutSSMParameter   = errors.New("failed to put SSM parameter")
 	errReadFile          = errors.New("failed to read file")
@@ -21,32 +24,23 @@ var (
 )
 
 // newBriefAndFullError creates a new error for when the --brief and --full options are both specified.
-func newBriefAndFullError(usage string) error {
-	return &util.Error{
-		Msg:   "it does not make sense to specify both --brief and --full\n",
-		Param: usage,
-	}
+func newBriefAndFullError() error {
+	return fmt.Errorf("%w: it does not make sense to specify both --brief and --full", errInvalidParamCombo)
 }
 
 // newEnvUsageError creates a new error for when the --env flag is specified with an invalid flag.
-func newEnvUsageError(usage string) error {
-	return &util.Error{
-		Msg:   "Cannot use --env with --full, --json, nor --verbose\n",
-		Param: usage,
-	}
+func newEnvUsageError() error {
+	return fmt.Errorf("%w: Cannot use --env with --full, --json, nor --verbose", errInvalidParamCombo)
 }
 
 // newFullAndVerboseError creates a new error for when the --full and --verbose options are both specified.
-func newFullAndVerboseError(usage string) error {
-	return &util.Error{
-		Msg:   "it does not make sense to specify both --full and --verbose\n",
-		Param: usage,
-	}
+func newFullAndVerboseError() error {
+	return fmt.Errorf("%w: it does not make sense to specify both --full and --verbose", errInvalidParamCombo)
 }
 
 // newInvalidEnvError creates a new error for when an invalid environment is specified.
 func newInvalidEnvError(env string) error {
-	return util.NewError("invalid environment", env)
+	return fmt.Errorf("%w: %s", errInvalidEnv, env)
 }
 
 // newInvalidTierError creates a new error for when an invalid SSM parameter store tier is specified.
@@ -58,5 +52,5 @@ func newInvalidTierError() error {
 		ssmTiersStr[i] = string(tier)
 	}
 
-	return errors.New("invalid tier specified. Must be one of: " + strings.Join(ssmTiersStr, ", "))
+	return fmt.Errorf("%w: Must be one of: %s", errInvalidTier, strings.Join(ssmTiersStr, ", "))
 }

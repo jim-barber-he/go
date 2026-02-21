@@ -74,8 +74,10 @@ const (
 	exitTimeout int = 202 // Failure. Lock timed out.
 )
 
+var errRedisPing = errors.New("could not ping Redis")
+
 func newRedisPingError(response string) error {
-	return util.NewError("could not ping Redis", response)
+	return fmt.Errorf("%w: %s", errRedisPing, response)
 }
 
 // getRedisKey returns the name of the Redis key to use for the lock.
