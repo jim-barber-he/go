@@ -1,7 +1,3 @@
-/*
-Package aws implements functions to interact with Amazon Web Services.
-This part handles working with the SSM Parameter Store.
-*/
 package aws
 
 import (
