@@ -85,8 +85,8 @@ func GetNode(ctx context.Context, client kubernetes.Interface, name string) (*v1
 	return ptr, nil
 }
 
-// hasPodReadyCondition returns true if the pod has a condition type of "Ready" with a status of "True".
-func hasPodReadyCondition(conditions []v1.PodCondition) bool {
+// HasPodReadyCondition returns true if the pod has a condition type of "Ready" with a status of "True".
+func HasPodReadyCondition(conditions []v1.PodCondition) bool {
 	for _, condition := range conditions {
 		if condition.Type == v1.PodReady && condition.Status == v1.ConditionTrue {
 			return true
@@ -96,8 +96,8 @@ func hasPodReadyCondition(conditions []v1.PodCondition) bool {
 	return false
 }
 
-// isPodInitializedConditionTrue returns true if the pod has a condition type of "Initialized" with a status of "True".
-func isPodInitializedConditionTrue(status *v1.PodStatus) bool {
+// IsPodInitializedConditionTrue returns true if the pod has a condition type of "Initialized" with a status of "True".
+func IsPodInitializedConditionTrue(status *v1.PodStatus) bool {
 	for _, condition := range status.Conditions {
 		if condition.Type == v1.PodInitialized && condition.Status == v1.ConditionTrue {
 			return true
@@ -107,8 +107,8 @@ func isPodInitializedConditionTrue(status *v1.PodStatus) bool {
 	return false
 }
 
-// isRestartableInitContainer returns true if an init container has its RestartPolicy set to "Always".
-func isRestartableInitContainer(initContainer *v1.Container) bool {
+// IsRestartableInitContainer returns true if an init container has its RestartPolicy set to "Always".
+func IsRestartableInitContainer(initContainer *v1.Container) bool {
 	if initContainer == nil || initContainer.RestartPolicy == nil {
 		return false
 	}
@@ -207,7 +207,7 @@ func PodDetails(pod *v1.Pod) PodInfo {
 	initContainers := make(map[string]*v1.Container)
 	for i := range pod.Spec.InitContainers {
 		initContainers[pod.Spec.InitContainers[i].Name] = &pod.Spec.InitContainers[i]
-		if isRestartableInitContainer(&pod.Spec.InitContainers[i]) {
+		if IsRestartableInitContainer(&pod.Spec.InitContainers[i]) {
 			totalContainers++
 		}
 	}
@@ -223,7 +223,7 @@ func PodDetails(pod *v1.Pod) PodInfo {
 			}
 		}
 
-		if isRestartableInitContainer(initContainers[icStatus.Name]) {
+		if IsRestartableInitContainer(initContainers[icStatus.Name]) {
 			restartableInitContainerRestarts += int(icStatus.RestartCount)
 			if icStatus.LastTerminationState.Terminated != nil {
 				terminatedDate := icStatus.LastTerminationState.Terminated.FinishedAt.Time
@@ -236,7 +236,7 @@ func PodDetails(pod *v1.Pod) PodInfo {
 		switch {
 		case icStatus.State.Terminated != nil && icStatus.State.Terminated.ExitCode == 0:
 			continue
-		case isRestartableInitContainer(initContainers[icStatus.Name]) && icStatus.Started != nil && *icStatus.Started:
+		case IsRestartableInitContainer(initContainers[icStatus.Name]) && icStatus.Started != nil && *icStatus.Started:
 			if icStatus.Ready {
 				readyContainers++
 			}
@@ -268,7 +268,7 @@ func PodDetails(pod *v1.Pod) PodInfo {
 		break
 	}
 
-	if !initializing || isPodInitializedConditionTrue(&pod.Status) {
+	if !initializing || IsPodInitializedConditionTrue(&pod.Status) {
 		restartCount = restartableInitContainerRestarts
 		lastRestartDate = lastRestartableInitContainerRestartDate
 		hasRunning := false
@@ -305,7 +305,7 @@ func PodDetails(pod *v1.Pod) PodInfo {
 
 		// Change pod status back to "Running" if there is at least one container still reporting as "Running" status.
 		if status == "Completed" && hasRunning {
-			if hasPodReadyCondition(pod.Status.Conditions) {
+			if HasPodReadyCondition(pod.Status.Conditions) {
 				status = "Running"
 			} else {
 				status = "NotReady"

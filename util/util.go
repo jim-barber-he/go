@@ -285,9 +285,9 @@ func TimeTaken(start time.Time, name string) {
 	fmt.Fprintf(os.Stderr, "%s took %s\n", name, time.Since(start))
 }
 
-// lineVisualWidth returns the visual width of a line with a string added taking tab stops into account.
+// LineVisualWidth returns the visual width of a line with a string added taking tab stops into account.
 // The line position of where the string is to be written is passed in since it affects the tabstop width at that point.
-func lineVisualWidth(linePos int, str string) int {
+func LineVisualWidth(linePos int, str string) int {
 	width := linePos
 
 	for _, r := range str {
@@ -324,7 +324,7 @@ func WrapLine(str string, width int) string {
 		// If the length of the current line + a space + the length of the word doesn't fit in the width, then
 		// write out the current line, so that the word just read will start on a new line.
 		// lineVisualWidth() is used since if a word contains tabs it will likely be visually wider.
-		if pos > 0 && lineVisualWidth(pos+1, word) > width {
+		if pos > 0 && LineVisualWidth(pos+1, word) > width {
 			wrappedLine.WriteString(currentLine.String() + "\n")
 			currentLine.Reset()
 

@@ -1,4 +1,4 @@
-package aws
+package aws_test
 
 import (
 	"context"
@@ -13,6 +13,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/ssooidc"
 	"github.com/aws/aws-sdk-go-v2/service/ssooidc/types"
+	awsutil "github.com/jim-barber-he/go/aws"
 )
 
 // mockSSOOIDCClient is a mock implementation of the SSOOIDC client for testing.
@@ -62,30 +63,30 @@ func TestLoadConfig(t *testing.T) {
 
 	tests := []struct {
 		name    string
-		details *LoginSessionDetails
+		details *awsutil.LoginSessionDetails
 	}{
 		{
 			name: "with profile and region",
-			details: &LoginSessionDetails{
+			details: &awsutil.LoginSessionDetails{
 				Profile: "test-profile",
 				Region:  "ap-southeast-2",
 			},
 		},
 		{
 			name: "with profile only",
-			details: &LoginSessionDetails{
+			details: &awsutil.LoginSessionDetails{
 				Profile: "test-profile",
 			},
 		},
 		{
 			name: "with region only",
-			details: &LoginSessionDetails{
+			details: &awsutil.LoginSessionDetails{
 				Region: "ap-southeast-2",
 			},
 		},
 		{
 			name:    "with empty details",
-			details: &LoginSessionDetails{},
+			details: &awsutil.LoginSessionDetails{},
 		},
 	}
 
@@ -106,7 +107,7 @@ func TestLoadConfig(t *testing.T) {
 				}
 			}()
 
-			cfg := loadConfig(ctx, tt.details)
+			cfg := awsutil.LoadConfig(ctx, tt.details)
 
 			// Basic validation that we got a config back.
 			if cfg.Region == "" && tt.details.Region != "" {
@@ -140,7 +141,7 @@ func TestWithSharedConfigProfileAndRegion(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			fn := withSharedConfigProfileAndRegion(tt.profile, tt.region)
+			fn := awsutil.WithSharedConfigProfileAndRegion(tt.profile, tt.region)
 
 			var opts config.LoadOptions
 
@@ -167,14 +168,14 @@ func TestRefreshSSOToken(t *testing.T) {
 
 	tests := []struct {
 		name          string
-		cache         *ssoCacheData
+		cache         *awsutil.SsoCacheData
 		mockFunc      func(ctx context.Context, params *ssooidc.CreateTokenInput) (*ssooidc.CreateTokenOutput, error)
 		expectedError bool
 		errorContains string
 	}{
 		{
 			name: "successful token refresh",
-			cache: &ssoCacheData{
+			cache: &awsutil.SsoCacheData{
 				ClientID:     "test-client-id",
 				ClientSecret: "test-client-secret",
 				RefreshToken: "test-refresh-token",
@@ -190,7 +191,7 @@ func TestRefreshSSOToken(t *testing.T) {
 		},
 		{
 			name: "successful token refresh without new refresh token",
-			cache: &ssoCacheData{
+			cache: &awsutil.SsoCacheData{
 				ClientID:     "test-client-id",
 				ClientSecret: "test-client-secret",
 				RefreshToken: "test-refresh-token",
@@ -206,7 +207,7 @@ func TestRefreshSSOToken(t *testing.T) {
 		},
 		{
 			name: "invalid grant error",
-			cache: &ssoCacheData{
+			cache: &awsutil.SsoCacheData{
 				ClientID:     "test-client-id",
 				ClientSecret: "test-client-secret",
 				RefreshToken: "invalid-refresh-token",
@@ -219,7 +220,7 @@ func TestRefreshSSOToken(t *testing.T) {
 		},
 		{
 			name: "other API error",
-			cache: &ssoCacheData{
+			cache: &awsutil.SsoCacheData{
 				ClientID:     "test-client-id",
 				ClientSecret: "test-client-secret",
 				RefreshToken: "test-refresh-token",
@@ -275,9 +276,9 @@ func TestRefreshSSOToken(t *testing.T) {
 func TestGenerateCodeVerifier(t *testing.T) {
 	t.Parallel()
 
-	// Test that generateCodeVerifier produces strings of expected length.
+	// Test that GenerateCodeVerifier produces strings of expected length.
 	for range [10]int{} {
-		verifier := generateCodeVerifier()
+		verifier := awsutil.GenerateCodeVerifier()
 
 		if len(verifier) != 64 {
 			t.Errorf("expected verifier length 64, got %d", len(verifier))
@@ -293,8 +294,8 @@ func TestGenerateCodeVerifier(t *testing.T) {
 	}
 
 	// Test that consecutive calls produce different results.
-	verifier1 := generateCodeVerifier()
-	verifier2 := generateCodeVerifier()
+	verifier1 := awsutil.GenerateCodeVerifier()
+	verifier2 := awsutil.GenerateCodeVerifier()
 
 	if verifier1 == verifier2 {
 		t.Error("consecutive calls to generateCodeVerifier() produced identical results")
@@ -325,7 +326,7 @@ func TestGenerateCodeChallenge(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			challenge := generateCodeChallenge(tt.verifier)
+			challenge := awsutil.GenerateCodeChallenge(tt.verifier)
 
 			if challenge != tt.expected {
 				t.Errorf("expected challenge %q, got %q", tt.expected, challenge)
@@ -367,7 +368,7 @@ func TestGetCacheFilePath(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			path, err := getCacheFilePath(tt.ssoSessionName, tt.ssoStartURL)
+			path, err := awsutil.GetCacheFilePath(tt.ssoSessionName, tt.ssoStartURL)
 
 			if tt.expectError {
 				if err == nil {
@@ -398,7 +399,7 @@ func TestCacheFileOperations(t *testing.T) {
 	tmpDir := t.TempDir()
 	cacheFilePath := filepath.Join(tmpDir, "test-cache.json")
 
-	testCache := &ssoCacheData{
+	testCache := &awsutil.SsoCacheData{
 		StartURL:              "https://test.awsapps.com/start",
 		Region:                "ap-southeast-2",
 		AccessToken:           "test-access-token",
@@ -410,7 +411,7 @@ func TestCacheFileOperations(t *testing.T) {
 	}
 
 	// Test writing cache file.
-	err := writeCacheFile(cacheFilePath, testCache)
+	err := awsutil.WriteCacheFile(cacheFilePath, testCache)
 	if err != nil {
 		t.Fatalf("failed to write cache file: %v", err)
 	}
@@ -422,7 +423,7 @@ func TestCacheFileOperations(t *testing.T) {
 	}
 
 	// Test reading cache file.
-	readCache, err := readCacheFile(cacheFilePath)
+	readCache, err := awsutil.ReadCacheFile(cacheFilePath)
 	if err != nil {
 		t.Fatalf("failed to read cache file: %v", err)
 	}
@@ -441,7 +442,7 @@ func TestCacheFileOperations(t *testing.T) {
 	}
 
 	// Test reading non-existent file.
-	_, err = readCacheFile(filepath.Join(tmpDir, "nonexistent.json"))
+	_, err = awsutil.ReadCacheFile(filepath.Join(tmpDir, "nonexistent.json"))
 	if err == nil {
 		t.Error("expected error when reading non-existent file")
 	}
@@ -454,7 +455,7 @@ func TestCacheFileOperations(t *testing.T) {
 		t.Fatalf("failed to create invalid JSON file: %v", err)
 	}
 
-	_, err = readCacheFile(invalidJSONPath)
+	_, err = awsutil.ReadCacheFile(invalidJSONPath)
 	if err == nil {
 		t.Error("expected error when reading invalid JSON file")
 	}
@@ -462,8 +463,8 @@ func TestCacheFileOperations(t *testing.T) {
 
 // Helper function to test refreshSSOToken with a mocked client.
 func refreshSSOTokenWithClient(
-	ctx context.Context, cache *ssoCacheData, _ aws.Config, ssooidcClient *mockSSOOIDCClient,
-) (*ssoCacheData, error) {
+	ctx context.Context, cache *awsutil.SsoCacheData, _ aws.Config, ssooidcClient *mockSSOOIDCClient,
+) (*awsutil.SsoCacheData, error) {
 	token, err := ssooidcClient.CreateToken(ctx, &ssooidc.CreateTokenInput{
 		ClientId:     aws.String(cache.ClientID),
 		ClientSecret: aws.String(cache.ClientSecret),
@@ -533,7 +534,7 @@ func TestCheckSharedConfig(t *testing.T) {
 			}
 
 			ctx := context.Background()
-			result := checkSharedConfig(ctx, tt.sharedConfig)
+			result := awsutil.CheckSharedConfig(ctx, tt.sharedConfig)
 
 			if !tt.expectPanic {
 				// Should return the same config if it has an SSO session.
@@ -686,7 +687,7 @@ func ssoTokenWaitWithClient(
 	}
 
 	if createTokenErr != nil {
-		return nil, errSSOTimeout
+		return nil, awsutil.ErrSSOTimeout
 	}
 
 	return token, nil

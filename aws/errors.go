@@ -6,14 +6,14 @@ import (
 )
 
 var (
-	errCacheFileRead  = errors.New("failed to read cache file")
-	errCacheFileWrite = errors.New("failed to write cache file")
+	ErrGoRoutine  = errors.New("goroutine error")
+	ErrSSOTimeout = errors.New("SSO login attempt timed out")
 
-	errDirCreate = errors.New("failed to create directory")
-
+	errCacheFileRead      = errors.New("failed to read cache file")
+	errCacheFileWrite     = errors.New("failed to write cache file")
+	errDirCreate          = errors.New("failed to create directory")
 	errGetCachePath       = errors.New("failed to get cache file path")
 	errGetToken           = errors.New("failed to get token")
-	errGoRoutine          = errors.New("goroutine error")
 	errMarshalJSON        = errors.New("failed to marshal cache data to JSON")
 	errOpenBrowser        = errors.New("failed to open browser for authentication")
 	errParameterDelete    = errors.New("failed to delete parameter")
@@ -22,23 +22,10 @@ var (
 	errParameterGetByPath = errors.New("failed to get parameters by path")
 	errParameterPut       = errors.New("failed to put parameter")
 	errParametersValidate = errors.New("failed to validate parameters")
-
 	errRegisterClient     = errors.New("failed to register client")
-	errSSOTimeout         = errors.New("SSO login attempt timed out")
 	errStartDeviceAuth    = errors.New("failed to start device authorisation")
 	errUnmarshalCacheFile = errors.New("failed to unmarshal cache file data")
 	errWriteCacheFile     = errors.New("failed to write cache file")
-)
-
-// Errors used in the tests.
-var (
-	errAccessDenied         = errors.New("access denied")
-	errAPIError             = errors.New("API error")
-	errAuthorizationPending = errors.New("AuthorizationPendingException: authorization pending")
-	errDecryptionFailed     = errors.New("decryption failed")
-	errKeyIDNotSet          = errors.New("KeyId not set for SecureString")
-	errPersistentError      = errors.New("persistent error")
-	errValidationError      = errors.New("validation error")
 )
 
 // NewCreateDirError creates a new error for directory creation failure.

@@ -1,9 +1,10 @@
-package k8s
+package k8s_test
 
 import (
 	"context"
 	"testing"
 
+	"github.com/jim-barber-he/go/k8s"
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes/fake"
@@ -39,7 +40,7 @@ func TestGetNamespace(t *testing.T) {
 	}
 
 	// Get the namespace.
-	ptr, err := GetNamespace(context.Background(), client, TestNamespace)
+	ptr, err := k8s.GetNamespace(context.Background(), client, TestNamespace)
 	if err != nil {
 		t.Fatalf("error getting namespace: %v", err)
 	}
@@ -69,7 +70,7 @@ func TestGetNode(t *testing.T) {
 	}
 
 	// Get the node.
-	ptr, err := GetNode(context.Background(), client, TestNodeName)
+	ptr, err := k8s.GetNode(context.Background(), client, TestNodeName)
 	if err != nil {
 		t.Fatalf("error getting node: %v", err)
 	}
@@ -108,12 +109,12 @@ func TestHasPodReadyCondition(t *testing.T) {
 	}
 
 	// Verify the pod has a ready condition.
-	if !hasPodReadyCondition(podReady.Status.Conditions) {
+	if !k8s.HasPodReadyCondition(podReady.Status.Conditions) {
 		t.Fatalf("expected pod to have a ready condition")
 	}
 
 	// Verify the pod does not have a ready condition.
-	if hasPodReadyCondition(podNotReady.Status.Conditions) {
+	if k8s.HasPodReadyCondition(podNotReady.Status.Conditions) {
 		t.Fatalf("expected pod to have a not ready condition")
 	}
 }
@@ -146,12 +147,12 @@ func TestIsPodInitializedConditionTrue(t *testing.T) {
 	}
 
 	// Verify the pod has an initialized condition.
-	if !isPodInitializedConditionTrue(&podInitialized.Status) {
+	if !k8s.IsPodInitializedConditionTrue(&podInitialized.Status) {
 		t.Fatalf("expected pod to have an initialized condition")
 	}
 
 	// Verify the pod does not have an initialized condition.
-	if isPodInitializedConditionTrue(&podNotInitialized.Status) {
+	if k8s.IsPodInitializedConditionTrue(&podNotInitialized.Status) {
 		t.Fatalf("expected pod to have a not initialized condition")
 	}
 }
@@ -188,12 +189,12 @@ func TestIsRestartableInitContainer(t *testing.T) {
 
 	// Verify the pod has a restartable init container.
 
-	if !isRestartableInitContainer(&podRestartable.Spec.InitContainers[0]) {
+	if !k8s.IsRestartableInitContainer(&podRestartable.Spec.InitContainers[0]) {
 		t.Fatalf("expected pod to have a restartable init container")
 	}
 
 	// Verify the pod does not have a restartable init container.
-	if isRestartableInitContainer(&podNonRestartable.Spec.InitContainers[0]) {
+	if k8s.IsRestartableInitContainer(&podNonRestartable.Spec.InitContainers[0]) {
 		t.Fatalf("expected pod to have a non-restartable init container")
 	}
 }
@@ -217,7 +218,7 @@ func TestListNodes(t *testing.T) {
 	}
 
 	// List the nodes.
-	nodes, err := ListNodes(client)
+	nodes, err := k8s.ListNodes(client)
 	if err != nil {
 		t.Fatalf("error listing nodes: %v", err)
 	}
@@ -252,7 +253,7 @@ func TestListPods(t *testing.T) {
 	}
 
 	// List the pods.
-	pods, err := ListPods(client, "default", "")
+	pods, err := k8s.ListPods(client, "default", "")
 	if err != nil {
 		t.Fatalf("error listing pods: %v", err)
 	}

@@ -230,7 +230,7 @@ func SSMGet(ctx context.Context, ssmClient *ssm.Client, name string, describe bo
 
 	err := grp.Wait()
 	if err != nil {
-		return SSMParameter{}, fmt.Errorf("%w: %w", errGoRoutine, err)
+		return SSMParameter{}, fmt.Errorf("%w: %w", ErrGoRoutine, err)
 	}
 
 	return param, nil
@@ -315,7 +315,7 @@ func SSMList(ctx context.Context, ssmClient *ssm.Client, path string, recursive,
 
 	err := grp.Wait()
 	if err != nil {
-		return nil, fmt.Errorf("%w: %w", errGoRoutine, err)
+		return nil, fmt.Errorf("%w: %w", ErrGoRoutine, err)
 	}
 
 	return result, nil
@@ -416,7 +416,7 @@ func SSMListSafeDecrypt(
 
 	err := grp.Wait()
 	if err != nil {
-		return nil, fmt.Errorf("%w: %w", errGoRoutine, err)
+		return nil, fmt.Errorf("%w: %w", ErrGoRoutine, err)
 	}
 
 	return result, nil
