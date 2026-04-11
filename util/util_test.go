@@ -1,8 +1,10 @@
-package util
+package util_test
 
 import (
 	"testing"
 	"time"
+
+	"github.com/jim-barber-he/go/util"
 )
 
 func TestFormatAge(t *testing.T) {
@@ -35,11 +37,15 @@ func TestFormatAge(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		t.Run("FormatAge", func(t *testing.T) {
+		t.Run("util.FormatAge", func(t *testing.T) {
 			t.Parallel()
 
-			if FormatAge(tt.timestamp) != tt.expected {
-				t.Errorf("FormatAge() failed, expected %s, got %s", tt.expected, FormatAge(tt.timestamp))
+			if util.FormatAge(tt.timestamp) != tt.expected {
+				t.Errorf(
+					"FormatAge() failed, expected %s, got %s",
+					tt.expected,
+					util.FormatAge(tt.timestamp),
+				)
 			}
 		})
 	}
@@ -76,11 +82,15 @@ func TestLastSplitItem(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		t.Run("LastSplitItem", func(t *testing.T) {
+		t.Run("util.LastSplitItem", func(t *testing.T) {
 			t.Parallel()
 
-			if LastSplitItem(tt.input, tt.sep) != tt.expected {
-				t.Errorf("LastSplitItem() failed, expected %s, got %s", tt.expected, LastSplitItem(tt.input, tt.sep))
+			if util.LastSplitItem(tt.input, tt.sep) != tt.expected {
+				t.Errorf(
+					"LastSplitItem() failed, expected %s, got %s",
+					tt.expected,
+					util.LastSplitItem(tt.input, tt.sep),
+				)
 			}
 		})
 	}
@@ -130,8 +140,12 @@ func TestLineVisualWidth(t *testing.T) {
 		t.Run("LineVisualWidth", func(t *testing.T) {
 			t.Parallel()
 
-			if lineVisualWidth(tt.linePos, tt.str) != tt.expected {
-				t.Errorf("LineVisualWidth() failed, expected %d, got %d", tt.expected, lineVisualWidth(tt.linePos, tt.str))
+			if util.LineVisualWidth(tt.linePos, tt.str) != tt.expected {
+				t.Errorf(
+					"LineVisualWidth() failed, expected %d, got %d",
+					tt.expected,
+					util.LineVisualWidth(tt.linePos, tt.str),
+				)
 			}
 		})
 	}
@@ -203,11 +217,15 @@ func TestWrapLine(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		t.Run("WrapLine", func(t *testing.T) {
+		t.Run("util.WrapLine", func(t *testing.T) {
 			t.Parallel()
 
-			if WrapLine(tt.str, tt.width) != tt.expected {
-				t.Errorf("WrapLine() failed, expected %s, got %s", tt.expected, WrapLine(tt.str, tt.width))
+			if util.WrapLine(tt.str, tt.width) != tt.expected {
+				t.Errorf(
+					"WrapLine() failed, expected %s, got %s",
+					tt.expected,
+					util.WrapLine(tt.str, tt.width),
+				)
 			}
 		})
 	}
@@ -299,11 +317,15 @@ func TestWrapTextToWidth(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		t.Run("WrapTextToWidth", func(t *testing.T) {
+		t.Run("util.WrapTextToWidth", func(t *testing.T) {
 			t.Parallel()
 
-			if WrapTextToWidth(tt.width, tt.str) != tt.expected {
-				t.Errorf("WrapTextToWidth() failed, expected [%s], got [%s]", tt.expected, WrapTextToWidth(tt.width, tt.str))
+			if util.WrapTextToWidth(tt.width, tt.str) != tt.expected {
+				t.Errorf(
+					"WrapTextToWidth() failed, expected [%s], got [%s]",
+					tt.expected,
+					util.WrapTextToWidth(tt.width, tt.str),
+				)
 			}
 		})
 	}

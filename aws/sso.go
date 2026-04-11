@@ -37,7 +37,7 @@ type LoginSessionDetails struct {
 	Region  string
 }
 
-type ssoCacheData struct {
+type SsoCacheData struct {
 	StartURL              string    `json:"startUrl"`
 	Region                string    `json:"region"`
 	AccessToken           string    `json:"accessToken"`
@@ -48,9 +48,9 @@ type ssoCacheData struct {
 	RefreshToken          string    `json:"refreshToken,omitempty"`
 }
 
-// withSharedConfigProfileAndRegion is a helper function to construct functional options that sets Profile and Region
+// WithSharedConfigProfileAndRegion is a helper function to construct functional options that sets Profile and Region
 // on config.LoadOptions.
-func withSharedConfigProfileAndRegion(profile, region string) config.LoadOptionsFunc {
+func WithSharedConfigProfileAndRegion(profile, region string) config.LoadOptionsFunc {
 	return func(o *config.LoadOptions) error {
 		o.Region = region
 		o.SharedConfigProfile = profile
@@ -59,8 +59,8 @@ func withSharedConfigProfileAndRegion(profile, region string) config.LoadOptions
 	}
 }
 
-// loadConfig is a helper function to load the AWS configuration with the provided details.
-func loadConfig(ctx context.Context, details *LoginSessionDetails) aws.Config {
+// LoadConfig is a helper function to load the AWS configuration with the provided details.
+func LoadConfig(ctx context.Context, details *LoginSessionDetails) aws.Config {
 	var (
 		cfg aws.Config
 		err error
@@ -69,7 +69,7 @@ func loadConfig(ctx context.Context, details *LoginSessionDetails) aws.Config {
 	switch {
 	case details.Profile != "" && details.Region != "":
 		cfg, err = config.LoadDefaultConfig(
-			ctx, withSharedConfigProfileAndRegion(details.Profile, details.Region),
+			ctx, WithSharedConfigProfileAndRegion(details.Profile, details.Region),
 		)
 	case details.Profile != "":
 		cfg, err = config.LoadDefaultConfig(ctx, config.WithSharedConfigProfile(details.Profile))
@@ -90,7 +90,7 @@ func loadConfig(ctx context.Context, details *LoginSessionDetails) aws.Config {
 // If the session in the on-disk cache files are invalid, then perform the AWS SSO workflow to have the user login.
 func Login(ctx context.Context, details *LoginSessionDetails, clientName string) aws.Config {
 	// Load the AWS configuration based on the provided details.
-	cfg := loadConfig(ctx, details)
+	cfg := LoadConfig(ctx, details)
 
 	// Check if the AWS SSO session is valid.
 	_, err := sts.NewFromConfig(cfg).GetCallerIdentity(ctx, &sts.GetCallerIdentityInput{})
@@ -100,19 +100,19 @@ func Login(ctx context.Context, details *LoginSessionDetails, clientName string)
 	}
 
 	// Recurse from assumed roles to the parent role until we find the configuration containing the SSO login details.
-	sharedConfig := checkSharedConfig(ctx, getSharedConfig(&cfg))
+	sharedConfig := CheckSharedConfig(ctx, getSharedConfig(&cfg))
 
 	// Try to refresh token before full login.
-	cachePath, err := getCacheFilePath(sharedConfig.SSOSessionName, sharedConfig.SSOSession.SSOStartURL)
+	cachePath, err := GetCacheFilePath(sharedConfig.SSOSessionName, sharedConfig.SSOSession.SSOStartURL)
 	if err == nil {
-		cache, err := readCacheFile(cachePath)
+		cache, err := ReadCacheFile(cachePath)
 		if err == nil {
 			if time.Now().UTC().After(cache.ExpiresAt) {
 				// Expired, try refresh.
 				if cache.RefreshToken != "" {
 					refreshed, err := refreshSSOToken(ctx, cache, cfg)
 					if err == nil {
-						_ = writeCacheFile(cachePath, refreshed)
+						_ = WriteCacheFile(cachePath, refreshed)
 
 						return cfg
 					}
@@ -155,7 +155,7 @@ func Login(ctx context.Context, details *LoginSessionDetails, clientName string)
 }
 
 // refreshSSOToken attempts to refresh the AWS SSO token using the refresh token stored in the cache.
-func refreshSSOToken(ctx context.Context, cache *ssoCacheData, cfg aws.Config) (*ssoCacheData, error) {
+func refreshSSOToken(ctx context.Context, cache *SsoCacheData, cfg aws.Config) (*SsoCacheData, error) {
 	ssooidcClient := ssooidc.NewFromConfig(cfg)
 
 	token, err := ssooidcClient.CreateToken(ctx, &ssooidc.CreateTokenInput{
@@ -199,12 +199,12 @@ func ssoLogin(ctx context.Context, cfg aws.Config, sharedConfig config.SharedCon
 		}
 	}
 
-	cacheFilePath, err := getCacheFilePath(sharedConfig.SSOSessionName, cacheData.StartURL)
+	cacheFilePath, err := GetCacheFilePath(sharedConfig.SSOSessionName, cacheData.StartURL)
 	if err != nil {
 		return fmt.Errorf("%w: %w", errGetCachePath, err)
 	}
 
-	err = writeCacheFile(cacheFilePath, cacheData)
+	err = WriteCacheFile(cacheFilePath, cacheData)
 	if err != nil {
 		return fmt.Errorf("%w: %w", errWriteCacheFile, err)
 	}
@@ -215,7 +215,7 @@ func ssoLogin(ctx context.Context, cfg aws.Config, sharedConfig config.SharedCon
 // ssoLoginWithPKCE attempts to perform an AWS SSO login using the PKCE (Proof Key for Code Exchange) flow.
 func ssoLoginWithPKCE(
 	ctx context.Context, cfg aws.Config, sharedConfig config.SharedConfig, clientName string,
-) (*ssoCacheData, error) {
+) (*SsoCacheData, error) {
 	ssoStartURL := sharedConfig.SSOSession.SSOStartURL
 	ssooidcClient := ssooidc.NewFromConfig(cfg)
 
@@ -235,8 +235,8 @@ func ssoLoginWithPKCE(
 		return nil, fmt.Errorf("%w: %w", errRegisterClient, err)
 	}
 
-	codeVerifier := generateCodeVerifier()
-	codeChallenge := generateCodeChallenge(codeVerifier)
+	codeVerifier := GenerateCodeVerifier()
+	codeChallenge := GenerateCodeChallenge(codeVerifier)
 
 	authURL := fmt.Sprintf(
 		"https://oidc.ap-southeast-2.amazonaws.com/authorize"+
@@ -282,7 +282,7 @@ func ssoLoginWithPKCE(
 		refreshToken = *token.RefreshToken
 	}
 
-	return &ssoCacheData{
+	return &SsoCacheData{
 		StartURL:              ssoStartURL,
 		Region:                sharedConfig.Region,
 		AccessToken:           *token.AccessToken,
@@ -294,8 +294,8 @@ func ssoLoginWithPKCE(
 	}, nil
 }
 
-// generateCodeVerifier creates a high-entropy PKCE code_verifier.
-func generateCodeVerifier() string {
+// GenerateCodeVerifier creates a high-entropy PKCE code_verifier.
+func GenerateCodeVerifier() string {
 	const charset = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-._~"
 
 	const strLen = 64
@@ -313,8 +313,8 @@ func generateCodeVerifier() string {
 	return string(char)
 }
 
-// generateCodeChallenge creates a PKCE code_challenge from the code_verifier using SHA-256 hashing.
-func generateCodeChallenge(verifier string) string {
+// GenerateCodeChallenge creates a PKCE code_challenge from the code_verifier using SHA-256 hashing.
+func GenerateCodeChallenge(verifier string) string {
 	hash := sha256.Sum256([]byte(verifier))
 
 	return base64.RawURLEncoding.EncodeToString(hash[:])
@@ -387,7 +387,7 @@ func localCallbackServer(ctx context.Context, expectedState string) (string, <-c
 // ssoLoginWithDeviceAuthorization attempts to perform an AWS SSO login using the Device-Authorization flow.
 func ssoLoginWithDeviceAuthorization(
 	ctx context.Context, cfg aws.Config, sharedConfig config.SharedConfig, clientName string,
-) (*ssoCacheData, error) {
+) (*SsoCacheData, error) {
 	ssoStartURL := sharedConfig.SSOSession.SSOStartURL
 	ssooidcClient := ssooidc.NewFromConfig(cfg)
 
@@ -428,7 +428,7 @@ func ssoLoginWithDeviceAuthorization(
 		refreshToken = *token.RefreshToken
 	}
 
-	return &ssoCacheData{
+	return &SsoCacheData{
 		StartURL:              ssoStartURL,
 		Region:                sharedConfig.Region,
 		AccessToken:           *token.AccessToken,
@@ -475,17 +475,17 @@ func ssoTokenWait(
 	}
 
 	if createTokenErr != nil {
-		return nil, errSSOTimeout
+		return nil, ErrSSOTimeout
 	}
 
 	return token, nil
 }
 
-// checkSharedConfig checks for a valid shared config from the user's AWS Profile to see if it has valid SSO session
+// CheckSharedConfig checks for a valid shared config from the user's AWS Profile to see if it has valid SSO session
 // details. If not, and it references a source profile, then load that and call this function again (recurse) to
 // check that, and so on. Eventually you'll hit a valid profile, or you'll get to the top-level where there is no
 // valid SSO session details at which point it has to give up.
-func checkSharedConfig(ctx context.Context, sharedConfig config.SharedConfig) config.SharedConfig {
+func CheckSharedConfig(ctx context.Context, sharedConfig config.SharedConfig) config.SharedConfig {
 	if sharedConfig.SSOSession != nil {
 		return sharedConfig
 	}
@@ -500,7 +500,7 @@ func checkSharedConfig(ctx context.Context, sharedConfig config.SharedConfig) co
 		log.Panicf("failed to load source profile %s: %v", sharedConfig.SourceProfileName, err)
 	}
 
-	return checkSharedConfig(ctx, getSharedConfig(&cfg))
+	return CheckSharedConfig(ctx, getSharedConfig(&cfg))
 }
 
 // getSharedConfig extracts the shared config from the slice of interfaces contained in the aws.Config struct.
@@ -515,8 +515,8 @@ func getSharedConfig(cfg *aws.Config) config.SharedConfig {
 	return config.SharedConfig{}
 }
 
-// getCacheFilePath returns the on-disk path of the cache file containing the AWS SSO session credentials.
-func getCacheFilePath(ssoSessionName, ssoStartURL string) (string, error) {
+// GetCacheFilePath returns the on-disk path of the cache file containing the AWS SSO session credentials.
+func GetCacheFilePath(ssoSessionName, ssoStartURL string) (string, error) {
 	var (
 		cacheFilePath string
 		err           error
@@ -536,15 +536,15 @@ func getCacheFilePath(ssoSessionName, ssoStartURL string) (string, error) {
 	return cacheFilePath, nil
 }
 
-// readCacheFile reads the contents of the valid credentials from a file containing the results of an AWS SSO login.
-// It is expected that the correct cache file path is passed in as retrieved via the getCacheFilePath() function.
-func readCacheFile(cacheFilePath string) (*ssoCacheData, error) {
+// ReadCacheFile reads the contents of the valid credentials from a file containing the results of an AWS SSO login.
+// It is expected that the correct cache file path is passed in as retrieved via the GetCacheFilePath() function.
+func ReadCacheFile(cacheFilePath string) (*SsoCacheData, error) {
 	data, err := os.ReadFile(cacheFilePath) //nolint:gosec // G304: Potential file inclusion via variable.
 	if err != nil {
 		return nil, fmt.Errorf("%w: %w", errCacheFileRead, err)
 	}
 
-	var cache ssoCacheData
+	var cache SsoCacheData
 
 	err = json.Unmarshal(data, &cache)
 	if err != nil {
@@ -554,9 +554,9 @@ func readCacheFile(cacheFilePath string) (*ssoCacheData, error) {
 	return &cache, nil
 }
 
-// writeCacheFile writes the contents of the valid credentials received after an AWS SSO login to a file.
-// It is expected that the correct cache file path is passed in as retrieved via the getCacheFilePath() function.
-func writeCacheFile(cacheFilePath string, cacheFileData *ssoCacheData) error {
+// WriteCacheFile writes the contents of the valid credentials received after an AWS SSO login to a file.
+// It is expected that the correct cache file path is passed in as retrieved via the GetCacheFilePath() function.
+func WriteCacheFile(cacheFilePath string, cacheFileData *SsoCacheData) error {
 	marshaledJSON, err := json.Marshal(cacheFileData)
 	if err != nil {
 		return fmt.Errorf("%w: %w", errMarshalJSON, err)

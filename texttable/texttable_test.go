@@ -1,8 +1,10 @@
-package texttable
+package texttable_test
 
 import (
 	"bytes"
 	"testing"
+
+	"github.com/jim-barber-he/go/texttable"
 )
 
 type Row struct {
@@ -16,7 +18,7 @@ func TestAppend(t *testing.T) {
 	t.Run("Append", func(t *testing.T) {
 		t.Parallel()
 
-		tbl := Table[*Row]{
+		tbl := texttable.Table[*Row]{
 			Rows: []*Row{
 				{Name: "a", Value: "a"},
 				{Name: "b", Value: "b"},
@@ -46,7 +48,7 @@ func TestWrite(t *testing.T) {
 	t.Run("Write", func(t *testing.T) {
 		t.Parallel()
 
-		tbl := Table[*Row]{
+		tbl := texttable.Table[*Row]{
 			Rows: []*Row{
 				{Name: "a", Value: "a"},
 				{Name: "b", Value: "b"},

@@ -1,4 +1,4 @@
-package aws
+package aws_test
 
 import (
 	"context"
@@ -10,6 +10,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/ssm"
 	"github.com/aws/aws-sdk-go-v2/service/ssm/types"
+	awsutil "github.com/jim-barber-he/go/aws"
 )
 
 // mockSSMClient is a mock implementation of the SSM client for testing.
@@ -93,7 +94,7 @@ func TestSSMClient(t *testing.T) {
 	t.Parallel()
 
 	cfg := aws.Config{}
-	client := SSMClient(cfg)
+	client := awsutil.SSMClient(cfg)
 
 	if client == nil {
 		t.Fatal("SSMClient() returned nil")
@@ -340,7 +341,7 @@ func TestSSMDescribeParameter(t *testing.T) {
 func ssmDeleteWithClient(ctx context.Context, ssmClient ssmClientInterface, name string) error {
 	_, err := ssmClient.DeleteParameter(ctx, &ssm.DeleteParameterInput{Name: aws.String(name)})
 	if err != nil {
-		return fmt.Errorf("%w: %w", NewParameterDeleteError(name), err)
+		return fmt.Errorf("%w: %w", awsutil.NewParameterDeleteError(name), err)
 	}
 
 	return nil
@@ -365,12 +366,12 @@ func ssmDescribeParameterWithClient(ctx context.Context, ssmClient ssmClientInte
 		},
 	})
 	if err != nil {
-		err = fmt.Errorf("%w: %w", NewParameterDescribeError(name), err)
+		err = fmt.Errorf("%w: %w", awsutil.NewParameterDescribeError(name), err)
 		return
 	}
 
 	if len(output.Parameters) != 1 {
-		err = NewOneParameterError(len(output.Parameters))
+		err = awsutil.NewOneParameterError(len(output.Parameters))
 		return
 	}
 
@@ -394,12 +395,7 @@ func ssmDescribeParameterWithClient(ctx context.Context, ssmClient ssmClientInte
 			jsonArray = append(jsonArray, aws.ToString(policy.PolicyText))
 		}
 
-		policies = "[" + jsonArray[0]
-		for i := 1; i < len(jsonArray); i++ {
-			policies += "," + jsonArray[i]
-		}
-
-		policies += "]"
+		policies = "[" + strings.Join(jsonArray, ",") + "]"
 	}
 
 	tier = param.Tier
@@ -425,7 +421,7 @@ func TestSSMGet(t *testing.T) {
 		describeParamsFunc func(
 			ctx context.Context, params *ssm.DescribeParametersInput,
 		) (*ssm.DescribeParametersOutput, error)
-		expectedParam SSMParameter
+		expectedParam awsutil.SSMParameter
 		expectedError bool
 		errorContains string
 	}{
@@ -448,7 +444,7 @@ func TestSSMGet(t *testing.T) {
 					},
 				}, nil
 			},
-			expectedParam: SSMParameter{
+			expectedParam: awsutil.SSMParameter{
 				ARN:              "arn:aws:ssm:ap-southeast-2:123456789012:parameter/test/parameter",
 				DataType:         "text",
 				LastModifiedDate: testTime,
@@ -492,7 +488,7 @@ func TestSSMGet(t *testing.T) {
 					},
 				}, nil
 			},
-			expectedParam: SSMParameter{
+			expectedParam: awsutil.SSMParameter{
 				ARN:              "arn:aws:ssm:ap-southeast-2:123456789012:parameter/test/parameter",
 				DataType:         "text",
 				Description:      "Test parameter",
@@ -525,7 +521,7 @@ func TestSSMGet(t *testing.T) {
 					},
 				}, nil
 			},
-			expectedParam: SSMParameter{
+			expectedParam: awsutil.SSMParameter{
 				ARN:              "arn:aws:ssm:ap-southeast-2:123456789012:parameter/test/parameter",
 				DataType:         "text", // should default to "text".
 				LastModifiedDate: testTime,
@@ -560,7 +556,7 @@ func TestSSMGet(t *testing.T) {
 					},
 				}, nil
 			},
-			expectedParam: SSMParameter{
+			expectedParam: awsutil.SSMParameter{
 				ARN:              "arn:aws:ssm:ap-southeast-2:123456789012:parameter/test/secure-parameter",
 				DataType:         "text",
 				Error:            "decryption failed",
@@ -664,8 +660,8 @@ func TestSSMGet(t *testing.T) {
 
 // ssmGetWithClient is a test helper that mimics SSMGet functionality with a mocked client.
 func ssmGetWithClient(
-	ctx context.Context, ssmClient ssmClientInterface, name string, describe bool) (SSMParameter, error) {
-	var param SSMParameter
+	ctx context.Context, ssmClient ssmClientInterface, name string, describe bool) (awsutil.SSMParameter, error) {
+	var param awsutil.SSMParameter
 
 	// Simulate the first goroutine that gets parameter.
 	output, err := ssmClient.GetParameter(ctx, &ssm.GetParameterInput{
@@ -677,7 +673,7 @@ func ssmGetWithClient(
 
 		output, err = ssmClient.GetParameter(ctx, &ssm.GetParameterInput{Name: aws.String(name)})
 		if err != nil {
-			return SSMParameter{}, fmt.Errorf("%w: %w", NewParameterGetError(name), err)
+			return awsutil.SSMParameter{}, fmt.Errorf("%w: %w", awsutil.NewParameterGetError(name), err)
 		}
 		// Clear the value since it failed to decrypt.
 		output.Parameter.Value = aws.String("")
@@ -704,7 +700,7 @@ func ssmGetWithClient(
 			ctx, ssmClient, name,
 		)
 		if err != nil {
-			return SSMParameter{}, fmt.Errorf("%w: %w", errGoRoutine, err)
+			return awsutil.SSMParameter{}, fmt.Errorf("%w: %w", awsutil.ErrGoRoutine, err)
 		}
 
 		param.AllowedPattern = allowedPattern
@@ -723,7 +719,7 @@ func TestSSMPut(t *testing.T) {
 
 	tests := []struct {
 		name            string
-		parameter       *SSMParameter
+		parameter       *awsutil.SSMParameter
 		mockFunc        func(ctx context.Context, params *ssm.PutParameterInput) (*ssm.PutParameterOutput, error)
 		expectedVersion int64
 		expectedError   bool
@@ -731,7 +727,7 @@ func TestSSMPut(t *testing.T) {
 	}{
 		{
 			name: "successful put string parameter",
-			parameter: &SSMParameter{
+			parameter: &awsutil.SSMParameter{
 				Name:        "/test/parameter",
 				Value:       "test-value",
 				Type:        "String",
@@ -746,7 +742,7 @@ func TestSSMPut(t *testing.T) {
 		},
 		{
 			name: "successful put secure string parameter",
-			parameter: &SSMParameter{
+			parameter: &awsutil.SSMParameter{
 				Name:        "/test/secure-parameter",
 				Value:       "secret-value",
 				Type:        "SecureString",
@@ -766,7 +762,7 @@ func TestSSMPut(t *testing.T) {
 		},
 		{
 			name: "successful put with allowed pattern",
-			parameter: &SSMParameter{
+			parameter: &awsutil.SSMParameter{
 				Name:           "/test/pattern-parameter",
 				Value:          "ABC123",
 				Type:           "String",
@@ -780,7 +776,7 @@ func TestSSMPut(t *testing.T) {
 		},
 		{
 			name: "parameter validation error",
-			parameter: &SSMParameter{
+			parameter: &awsutil.SSMParameter{
 				Name:  "/invalid/parameter",
 				Value: "invalid-value",
 				Type:  "String",
@@ -793,7 +789,7 @@ func TestSSMPut(t *testing.T) {
 		},
 		{
 			name: "access denied error",
-			parameter: &SSMParameter{
+			parameter: &awsutil.SSMParameter{
 				Name:  "/restricted/parameter",
 				Value: "test-value",
 				Type:  "String",
@@ -841,7 +837,7 @@ func TestSSMPut(t *testing.T) {
 }
 
 // ssmPutWithClient is a test helper that mimics SSMPut functionality with a mocked client.
-func ssmPutWithClient(ctx context.Context, ssmClient ssmClientInterface, param *SSMParameter) (int64, error) {
+func ssmPutWithClient(ctx context.Context, ssmClient ssmClientInterface, param *awsutil.SSMParameter) (int64, error) {
 	input := &ssm.PutParameterInput{
 		Name:      aws.String(param.Name),
 		Overwrite: aws.Bool(true),
@@ -867,7 +863,7 @@ func ssmPutWithClient(ctx context.Context, ssmClient ssmClientInterface, param *
 
 	output, err := ssmClient.PutParameter(ctx, input)
 	if err != nil {
-		return -1, fmt.Errorf("%w: %w", NewParameterPutError(param.Name), err)
+		return -1, fmt.Errorf("%w: %w", awsutil.NewParameterPutError(param.Name), err)
 	}
 
 	return output.Version, nil
@@ -880,13 +876,13 @@ func TestSSMParameterPrint(t *testing.T) {
 
 	tests := []struct {
 		name      string
-		param     SSMParameter
+		param     awsutil.SSMParameter
 		hideValue bool
 		json      bool
 	}{
 		{
 			name: "print text format with value",
-			param: SSMParameter{
+			param: awsutil.SSMParameter{
 				ARN:              "arn:aws:ssm:ap-southeast-2:123456789012:parameter/test/parameter",
 				DataType:         "text",
 				Description:      "Test parameter",
@@ -901,7 +897,7 @@ func TestSSMParameterPrint(t *testing.T) {
 		},
 		{
 			name: "print text format without value",
-			param: SSMParameter{
+			param: awsutil.SSMParameter{
 				ARN:              "arn:aws:ssm:ap-southeast-2:123456789012:parameter/test/parameter",
 				DataType:         "text",
 				Description:      "Test parameter",
@@ -916,7 +912,7 @@ func TestSSMParameterPrint(t *testing.T) {
 		},
 		{
 			name: "print JSON format with value",
-			param: SSMParameter{
+			param: awsutil.SSMParameter{
 				ARN:              "arn:aws:ssm:ap-southeast-2:123456789012:parameter/test/parameter",
 				DataType:         "text",
 				Description:      "Test parameter",
@@ -931,7 +927,7 @@ func TestSSMParameterPrint(t *testing.T) {
 		},
 		{
 			name: "print JSON format without value",
-			param: SSMParameter{
+			param: awsutil.SSMParameter{
 				ARN:              "arn:aws:ssm:ap-southeast-2:123456789012:parameter/test/parameter",
 				DataType:         "text",
 				Description:      "Test parameter",
