@@ -1,4 +1,4 @@
-.PHONY: all build clean install lint lintall run vet
+.PHONY: all build clean fix install lint lintall run test update vet vulncheck
 
 all: vet lint build install
 
@@ -33,3 +33,7 @@ update:
 	go get go@latest
 	go get -u ./...
 	go mod tidy
+
+vulncheck:
+	# go install golang.org/x/vuln/cmd/govulncheck@latest
+	govulncheck ./...

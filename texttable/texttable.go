@@ -30,8 +30,19 @@ func (t *Table[R]) Append(r R) {
 	t.Rows = append(t.Rows, r)
 }
 
-// Write the table to an io.Writer. If no io.Writer is provided, it defaults to os.Stdout.
+// Write the table, with its headers row to an io.Writer. If no io.Writer is provided, it defaults to os.Stdout.
 func (t *Table[R]) Write(w ...io.Writer) {
+	t.write(true, w...)
+}
+
+// Write the table data, without its headers row to an io.Writer. If no io.Writer is provided, it defaults to os.Stdout.
+func (t *Table[R]) WriteNoHeaders(w ...io.Writer) {
+	t.write(false, w...)
+}
+
+// Write the table to an io.Writer. If no io.Writer is provided, it defaults to os.Stdout.
+// The headers bool defines if the table headers row is included in the output or not.
+func (t *Table[R]) write(headers bool, w ...io.Writer) {
 	if len(t.Rows) == 0 {
 		return
 	}
@@ -73,18 +84,20 @@ func (t *Table[R]) Write(w ...io.Writer) {
 	// Create a tab writer to display the table. Each row needs to consist of tab separated strings.
 	tw := tabwriter.NewWriter(out, tableMinWidth, tableTabWidth, tablePadding, tablePadChar, tableFlags)
 
-	// Add the title row of the table skipping any `omitempty` columns where all its values are empty.
 	var s []string
 
-	for i, sf := range fields {
-		if omit[i] {
-			continue
+	if headers {
+		// Add the title row of the table skipping any `omitempty` columns where all its values are empty.
+		for i, sf := range fields {
+			if omit[i] {
+				continue
+			}
+
+			s = append(s, strings.Split(sf.Tag.Get("title"), ",")[0])
 		}
 
-		s = append(s, strings.Split(sf.Tag.Get("title"), ",")[0])
+		fmt.Fprintln(tw, strings.Join(s, "\t"))
 	}
-
-	fmt.Fprintln(tw, strings.Join(s, "\t"))
 
 	// Add the table rows skipping any `omitempty` columns where all its values are empty.
 	for _, row := range t.Rows {

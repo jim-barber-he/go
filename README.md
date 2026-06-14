@@ -25,3 +25,14 @@ The following libraries in this repository were written to implement the utiliti
 - [k8s](k8s/) Implements functions to interact with Kubernetes clusters.
 - [texttable](texttable/) Implements functions for handling outputting a text based table.
 - [util](util/) Implements various utility functions.
+
+## Updating Modules Before Build
+
+I only occasionally push up updates to the Go modules.
+However locally I regularly update them and build and install the tools.
+
+Before building you may want to run the following to get everything updated:
+```
+make update
+```
+Note that this also updates things to use the latest version of Go.
