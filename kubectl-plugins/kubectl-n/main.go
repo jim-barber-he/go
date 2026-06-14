@@ -69,6 +69,7 @@ func main() {
 	flag.Var(&name, "name", "Filter nodes by name regex")
 
 	kubeContext := flag.String("context", "", "The name of the kubeconfig context to use")
+	noHeaders := flag.Bool("no-headers", false, "Do not display table headers")
 	unhealthy := flag.Bool("unhealthy", false, "Only show nodes where the status is not OK")
 	version := flag.BoolP("version", "v", false, "Display the version of this tool")
 	wide := flag.BoolP("wide", "w", false, "Add KernelVersion, OSImage, and Architecture columns")
@@ -174,7 +175,11 @@ func main() {
 	})
 
 	// Display the table.
-	tbl.Write()
+	if *noHeaders {
+		tbl.WriteNoHeaders()
+	} else {
+		tbl.Write()
+	}
 
 	// Display any warning messages for the nodes.
 	printWarnings(warnings)

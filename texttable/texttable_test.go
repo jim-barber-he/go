@@ -65,3 +65,27 @@ func TestWrite(t *testing.T) {
 		}
 	})
 }
+
+func TestWriteNoHeaders(t *testing.T) {
+	t.Parallel()
+
+	t.Run("WriteNoHeader", func(t *testing.T) {
+		t.Parallel()
+
+		tbl := texttable.Table[*Row]{
+			Rows: []*Row{
+				{Name: "a", Value: "a"},
+				{Name: "b", Value: "b"},
+			},
+		}
+
+		var buf bytes.Buffer
+		tbl.WriteNoHeaders(&buf)
+		table := buf.String()
+
+		expected := "a  a\nb  b\n"
+		if table != expected {
+			t.Errorf("Append() failed, expected %s, got %s", expected, table)
+		}
+	})
+}

@@ -78,6 +78,7 @@ type options struct {
 	name          regexValue
 	namespace     string
 	node          regexValue
+	noHeaders     bool
 	notName       regexValue
 	notStatus     regexValue
 	profileCPU    filePath
@@ -106,6 +107,7 @@ func main() {
 	flag.Var(&opts.name, "name", "Limit output to pods with names matching this regex")
 	flag.StringVarP(&opts.namespace, "namespace", "n", "", "If present, the namespace scope for this CLI request")
 	flag.Var(&opts.node, "node", "Limit output to pods running on nodes matching this regex")
+	flag.BoolVar(&opts.noHeaders, "no-headers", false, "Do not display table headers")
 	flag.Var(&opts.notName, "not-name", "Limit output to pods with names not matching this regex")
 	flag.Var(&opts.notStatus, "not-status", "Limit output to pods with a status not matching this regex")
 	flag.Var(&opts.profileCPU, "profile-cpu", "Produce pprof cpu profiling output in supplied file")
@@ -237,7 +239,7 @@ func run(opts options) error {
 	pods.Items = podItems
 
 	// Build and display the table for each pod.
-	buildAndDisplayTable(pods, nodes, opts.allNamespaces)
+	buildAndDisplayTable(pods, nodes, opts.allNamespaces, opts.noHeaders)
 
 	// Memory profiling.
 	if opts.profileMemory != "" {
@@ -264,7 +266,7 @@ func run(opts options) error {
 }
 
 // buildAndDisplayTable builds the table from the pods (with some node details for the pod) and displays it.
-func buildAndDisplayTable(pods *v1.PodList, nodes map[string]*v1.Node, allNamespaces bool) {
+func buildAndDisplayTable(pods *v1.PodList, nodes map[string]*v1.Node, allNamespaces, noHeaders bool) {
 	var tbl texttable.Table[*tableRow]
 
 	for i := range pods.Items {
@@ -281,7 +283,11 @@ func buildAndDisplayTable(pods *v1.PodList, nodes map[string]*v1.Node, allNamesp
 	})
 
 	// Display the table.
-	tbl.Write()
+	if noHeaders {
+		tbl.WriteNoHeaders()
+	} else {
+		tbl.Write()
+	}
 }
 
 // createTableRow creates a tableRow from a pod and node information.
