@@ -238,6 +238,7 @@ func createTableRow(node *v1.Node, wide bool) tableRow {
 func getNodeStatus(conditions []v1.NodeCondition) (string, []string) {
 	var (
 		goodStatuses = map[v1.NodeConditionType]v1.ConditionStatus{
+			"ContainerRuntimeReady":       "True",
 			"ContainerRuntimeUnhealthy":   "False",
 			"CorruptDockerOverlay2":       "False",
 			"CPUPressure":                 "False",
@@ -247,13 +248,16 @@ func getNodeStatus(conditions []v1.NodeCondition) (string, []string) {
 			"FrequentKubeletRestart":      "False",
 			"FrequentUnregisterNetDevice": "False",
 			"KernelDeadlock":              "False",
+			"KernelReady":                 "True",
 			"KubeletUnhealthy":            "False",
 			"MemoryPressure":              "False",
+			"NetworkingReady":             "True",
 			"NetworkUnavailable":          "False",
 			"OutOfDisk":                   "False",
 			"PIDPressure":                 "False",
 			"ReadonlyFilesystem":          "False",
 			"Ready":                       "True",
+			"StorageReady":                "True",
 		}
 		messages []string
 	)
