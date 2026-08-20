@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"strconv"
 	"time"
 
@@ -273,9 +274,7 @@ func PodDetails(pod *v1.Pod) PodInfo {
 		lastRestartDate = lastRestartableInitContainerRestartDate
 		hasRunning := false
 
-		for i := len(pod.Status.ContainerStatuses) - 1; i >= 0; i-- {
-			cStatus := pod.Status.ContainerStatuses[i]
-
+		for _, cStatus := range slices.Backward(pod.Status.ContainerStatuses) {
 			restartCount += int(cStatus.RestartCount)
 			if cStatus.LastTerminationState.Terminated != nil {
 				terminatedDate := cStatus.LastTerminationState.Terminated.FinishedAt.Time

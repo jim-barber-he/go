@@ -117,8 +117,7 @@ func Login(ctx context.Context, details *LoginSessionDetails, clientName string)
 						return cfg
 					}
 
-					var errInvalidGrant *types.InvalidGrantException
-					if errors.As(err, &errInvalidGrant) {
+					if _, ok := errors.AsType[*types.InvalidGrantException](err); ok {
 						log.Println("Token expired, falling back to login")
 					} else {
 						log.Printf("Token refresh failed, falling back to login: %v", err)

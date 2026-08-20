@@ -29,9 +29,7 @@ func TestGetNamespace(t *testing.T) {
 
 	// Create a fake namespace.
 	ns := &v1.Namespace{
-		ObjectMeta: metav1.ObjectMeta{
-			Name: TestNamespace,
-		},
+		Name: TestNamespace,
 	}
 
 	_, err := client.CoreV1().Namespaces().Create(context.Background(), ns, metav1.CreateOptions{})
@@ -59,9 +57,7 @@ func TestGetNode(t *testing.T) {
 
 	// Create a fake node.
 	node := &v1.Node{
-		ObjectMeta: metav1.ObjectMeta{
-			Name: TestNodeName,
-		},
+		Name: TestNodeName,
 	}
 
 	_, err := client.CoreV1().Nodes().Create(context.Background(), node, metav1.CreateOptions{})
@@ -207,9 +203,7 @@ func TestListNodes(t *testing.T) {
 
 	// Create a fake node.
 	node := &v1.Node{
-		ObjectMeta: metav1.ObjectMeta{
-			Name: TestNodeName,
-		},
+		Name: TestNodeName,
 	}
 
 	_, err := client.CoreV1().Nodes().Create(context.Background(), node, metav1.CreateOptions{})
@@ -241,10 +235,8 @@ func TestListPods(t *testing.T) {
 
 	// Create a fake pod.
 	pod := &v1.Pod{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      TestPodName,
-			Namespace: "default",
-		},
+		Name:      TestPodName,
+		Namespace: "default",
 	}
 
 	_, err := client.CoreV1().Pods("default").Create(context.Background(), pod, metav1.CreateOptions{})

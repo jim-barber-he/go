@@ -291,8 +291,7 @@ func run() int {
 		exitCode = exitTimeout
 	}
 	// Show any errors from trying to run the command that weren't from the command itself.
-	var exitError *exec.ExitError
-	if !errors.As(err, &exitError) {
+	if _, ok := errors.AsType[*exec.ExitError](err); !ok {
 		slog.Error(err.Error())
 	}
 

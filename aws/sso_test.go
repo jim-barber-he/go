@@ -16,6 +16,16 @@ import (
 	awsutil "github.com/jim-barber-he/go/aws"
 )
 
+const (
+	awsProfile      string = "test-profile"
+	awsRegion       string = "ap-southeast-2"
+	ssoAccessToken  string = "test-access-token"
+	ssoClientID     string = "test-client-id"
+	ssoClientSecret string = "test-client-secret"
+	ssoRefreshToken string = "test-refresh-token"
+	ssoStartURL     string = "https://test.awsapps.com/start"
+)
+
 // mockSSOOIDCClient is a mock implementation of the SSOOIDC client for testing.
 type mockSSOOIDCClient struct {
 	registerClientFunc func(
@@ -68,20 +78,20 @@ func TestLoadConfig(t *testing.T) {
 		{
 			name: "with profile and region",
 			details: &awsutil.LoginSessionDetails{
-				Profile: "test-profile",
-				Region:  "ap-southeast-2",
+				Profile: awsProfile,
+				Region:  awsRegion,
 			},
 		},
 		{
 			name: "with profile only",
 			details: &awsutil.LoginSessionDetails{
-				Profile: "test-profile",
+				Profile: awsProfile,
 			},
 		},
 		{
 			name: "with region only",
 			details: &awsutil.LoginSessionDetails{
-				Region: "ap-southeast-2",
+				Region: awsRegion,
 			},
 		},
 		{
@@ -127,8 +137,8 @@ func TestWithSharedConfigProfileAndRegion(t *testing.T) {
 	}{
 		{
 			name:    "valid profile and region",
-			profile: "test-profile",
-			region:  "ap-southeast-2",
+			profile: awsProfile,
+			region:  awsRegion,
 		},
 		{
 			name:    "empty profile and region",
@@ -176,9 +186,9 @@ func TestRefreshSSOToken(t *testing.T) {
 		{
 			name: "successful token refresh",
 			cache: &awsutil.SsoCacheData{
-				ClientID:     "test-client-id",
-				ClientSecret: "test-client-secret",
-				RefreshToken: "test-refresh-token",
+				ClientID:     ssoClientID,
+				ClientSecret: ssoClientSecret,
+				RefreshToken: ssoRefreshToken,
 			},
 			mockFunc: func(_ context.Context, _ *ssooidc.CreateTokenInput) (*ssooidc.CreateTokenOutput, error) {
 				return &ssooidc.CreateTokenOutput{
@@ -192,9 +202,9 @@ func TestRefreshSSOToken(t *testing.T) {
 		{
 			name: "successful token refresh without new refresh token",
 			cache: &awsutil.SsoCacheData{
-				ClientID:     "test-client-id",
-				ClientSecret: "test-client-secret",
-				RefreshToken: "test-refresh-token",
+				ClientID:     ssoClientID,
+				ClientSecret: ssoClientSecret,
+				RefreshToken: ssoRefreshToken,
 			},
 			mockFunc: func(_ context.Context, _ *ssooidc.CreateTokenInput) (*ssooidc.CreateTokenOutput, error) {
 				return &ssooidc.CreateTokenOutput{
@@ -208,8 +218,8 @@ func TestRefreshSSOToken(t *testing.T) {
 		{
 			name: "invalid grant error",
 			cache: &awsutil.SsoCacheData{
-				ClientID:     "test-client-id",
-				ClientSecret: "test-client-secret",
+				ClientID:     ssoClientID,
+				ClientSecret: ssoClientSecret,
 				RefreshToken: "invalid-refresh-token",
 			},
 			mockFunc: func(_ context.Context, _ *ssooidc.CreateTokenInput) (*ssooidc.CreateTokenOutput, error) {
@@ -221,9 +231,9 @@ func TestRefreshSSOToken(t *testing.T) {
 		{
 			name: "other API error",
 			cache: &awsutil.SsoCacheData{
-				ClientID:     "test-client-id",
-				ClientSecret: "test-client-secret",
-				RefreshToken: "test-refresh-token",
+				ClientID:     ssoClientID,
+				ClientSecret: ssoClientSecret,
+				RefreshToken: ssoRefreshToken,
 			},
 			mockFunc: func(_ context.Context, _ *ssooidc.CreateTokenInput) (*ssooidc.CreateTokenOutput, error) {
 				return nil, errAPIError
@@ -353,7 +363,7 @@ func TestGetCacheFilePath(t *testing.T) {
 		{
 			name:           "with start URL",
 			ssoSessionName: "",
-			ssoStartURL:    "https://test.awsapps.com/start",
+			ssoStartURL:    ssoStartURL,
 			expectError:    false,
 		},
 		{
@@ -400,14 +410,14 @@ func TestCacheFileOperations(t *testing.T) {
 	cacheFilePath := filepath.Join(tmpDir, "test-cache.json")
 
 	testCache := &awsutil.SsoCacheData{
-		StartURL:              "https://test.awsapps.com/start",
-		Region:                "ap-southeast-2",
-		AccessToken:           "test-access-token",
+		StartURL:              ssoStartURL,
+		Region:                awsRegion,
+		AccessToken:           ssoAccessToken,
 		ExpiresAt:             time.Now().UTC().Add(time.Hour),
-		ClientID:              "test-client-id",
-		ClientSecret:          "test-client-secret",
+		ClientID:              ssoClientID,
+		ClientSecret:          ssoClientSecret,
 		RegistrationExpiresAt: time.Now().UTC().Add(24 * time.Hour),
-		RefreshToken:          "test-refresh-token",
+		RefreshToken:          ssoRefreshToken,
 	}
 
 	// Test writing cache file.
@@ -499,8 +509,8 @@ func TestCheckSharedConfig(t *testing.T) {
 			sharedConfig: config.SharedConfig{
 				SSOSession: &config.SSOSession{
 					Name:        "test-session",
-					SSOStartURL: "https://test.awsapps.com/start",
-					SSORegion:   "ap-southeast-2",
+					SSOStartURL: ssoStartURL,
+					SSORegion:   awsRegion,
 				},
 			},
 			expectPanic: false,
@@ -561,9 +571,9 @@ func TestSSOTokenWait(t *testing.T) {
 				_ context.Context, _ *ssooidc.CreateTokenInput,
 			) (*ssooidc.CreateTokenOutput, error) {
 				return &ssooidc.CreateTokenOutput{
-					AccessToken:  aws.String("test-access-token"),
+					AccessToken:  aws.String(ssoAccessToken),
 					ExpiresIn:    3600,
-					RefreshToken: aws.String("test-refresh-token"),
+					RefreshToken: aws.String(ssoRefreshToken),
 				}, nil
 			},
 			expectedError: false,
@@ -584,9 +594,9 @@ func TestSSOTokenWait(t *testing.T) {
 					}
 
 					return &ssooidc.CreateTokenOutput{
-						AccessToken:  aws.String("test-access-token"),
+						AccessToken:  aws.String(ssoAccessToken),
 						ExpiresIn:    3600,
-						RefreshToken: aws.String("test-refresh-token"),
+						RefreshToken: aws.String(ssoRefreshToken),
 					}, nil
 				}
 			}(),
@@ -613,8 +623,8 @@ func TestSSOTokenWait(t *testing.T) {
 			}
 
 			mockRegisterOutput := &ssooidc.RegisterClientOutput{
-				ClientId:     aws.String("test-client-id"),
-				ClientSecret: aws.String("test-client-secret"),
+				ClientId:     aws.String(ssoClientID),
+				ClientSecret: aws.String(ssoClientSecret),
 			}
 
 			mockDeviceAuth := &ssooidc.StartDeviceAuthorizationOutput{
@@ -644,8 +654,8 @@ func TestSSOTokenWait(t *testing.T) {
 				t.Fatal("expected token but got nil")
 			}
 
-			if aws.ToString(token.AccessToken) != "test-access-token" {
-				t.Errorf("expected access token %q, got %q", "test-access-token", aws.ToString(token.AccessToken))
+			if aws.ToString(token.AccessToken) != ssoAccessToken {
+				t.Errorf("expected access token %q, got %q", ssoAccessToken, aws.ToString(token.AccessToken))
 			}
 		})
 	}
