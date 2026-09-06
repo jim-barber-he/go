@@ -20,11 +20,11 @@ func TestAppend(t *testing.T) {
 
 		tbl := texttable.Table[*Row]{
 			Rows: []*Row{
-				{Name: "a", Value: "a"},
-				{Name: "b", Value: "b"},
+				{Name: "a", Value: "x"},
+				{Name: "b", Value: "y"},
 			},
 		}
-		tbl.Append(&Row{Name: "c", Value: "c"})
+		tbl.Append(&Row{Name: "c", Value: "z"})
 
 		expectedLen := 3
 		if len(tbl.Rows) != expectedLen {
@@ -35,7 +35,7 @@ func TestAppend(t *testing.T) {
 		tbl.Write(&buf)
 		table := buf.String()
 
-		expected := "NAME  VALUE\na     a\nb     b\nc     c\n"
+		expected := "NAME  VALUE\na     x\nb     y\nc     z\n"
 		if table != expected {
 			t.Errorf("Append() failed, expected %s, got %s", expected, table)
 		}
@@ -50,8 +50,8 @@ func TestWrite(t *testing.T) {
 
 		tbl := texttable.Table[*Row]{
 			Rows: []*Row{
-				{Name: "a", Value: "a"},
-				{Name: "b", Value: "b"},
+				{Name: "a", Value: "x"},
+				{Name: "b", Value: "y"},
 			},
 		}
 
@@ -59,7 +59,7 @@ func TestWrite(t *testing.T) {
 		tbl.Write(&buf)
 		table := buf.String()
 
-		expected := "NAME  VALUE\na     a\nb     b\n"
+		expected := "NAME  VALUE\na     x\nb     y\n"
 		if table != expected {
 			t.Errorf("Append() failed, expected %s, got %s", expected, table)
 		}
@@ -74,8 +74,8 @@ func TestWriteNoHeaders(t *testing.T) {
 
 		tbl := texttable.Table[*Row]{
 			Rows: []*Row{
-				{Name: "a", Value: "a"},
-				{Name: "b", Value: "b"},
+				{Name: "a", Value: "x"},
+				{Name: "b", Value: "y"},
 			},
 		}
 
@@ -83,7 +83,7 @@ func TestWriteNoHeaders(t *testing.T) {
 		tbl.WriteNoHeaders(&buf)
 		table := buf.String()
 
-		expected := "a  a\nb  b\n"
+		expected := "a  x\nb  y\n"
 		if table != expected {
 			t.Errorf("Append() failed, expected %s, got %s", expected, table)
 		}

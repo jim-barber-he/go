@@ -22,7 +22,7 @@ lint:
 	golangci-lint run
 
 lintall:
-	golangci-lint run --default all --disable depguard,exhaustruct,wsl || true
+	golangci-lint run --default all --disable depguard,exhaustruct,gomodguard,wsl || true
 
 run: build
 	./${BINARY_NAME}-${ARCH}

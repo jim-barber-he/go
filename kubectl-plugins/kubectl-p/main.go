@@ -134,7 +134,7 @@ func main() {
 func run(opts options) error {
 	// CPU profiling.
 	if opts.profileCPU != "" {
-		fp, err := os.Create(string(opts.profileCPU))
+		file, err := os.Create(string(opts.profileCPU))
 		if err != nil {
 			return fmt.Errorf("failed to create CPU profile file: %w", err)
 		}
@@ -143,9 +143,9 @@ func run(opts options) error {
 			if err != nil {
 				log.Println(err)
 			}
-		}(fp)
+		}(file)
 
-		err = pprof.StartCPUProfile(fp)
+		err = pprof.StartCPUProfile(file)
 		if err != nil {
 			return fmt.Errorf("failed to start CPU profile: %w", err)
 		}
@@ -243,7 +243,7 @@ func run(opts options) error {
 
 	// Memory profiling.
 	if opts.profileMemory != "" {
-		fp, err := os.Create(string(opts.profileMemory))
+		file, err := os.Create(string(opts.profileMemory))
 		if err != nil {
 			return fmt.Errorf("failed to create memory profile file: %w", err)
 		}
@@ -252,11 +252,11 @@ func run(opts options) error {
 			if err != nil {
 				log.Println(err)
 			}
-		}(fp)
+		}(file)
 		// Get up-to-date statistics.
 		runtime.GC()
 
-		err = pprof.WriteHeapProfile(fp)
+		err = pprof.WriteHeapProfile(file)
 		if err != nil {
 			return fmt.Errorf("failed to write memory profile: %w", err)
 		}

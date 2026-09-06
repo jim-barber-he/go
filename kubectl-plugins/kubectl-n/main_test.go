@@ -8,6 +8,12 @@ import (
 )
 
 func TestGetNodeStatus(t *testing.T) {
+	const (
+		msgDiskIsFull      string = "Disk is full"
+		msgKubletHealthy   string = "Kubelet is healthy"
+		msgKubletUnHealthy string = "Kubelet is unhealthy"
+	)
+
 	t.Parallel()
 
 	tests := []struct {
@@ -17,29 +23,29 @@ func TestGetNodeStatus(t *testing.T) {
 	}{
 		{
 			conditions: []v1.NodeCondition{
-				{Type: "Ready", Status: v1.ConditionTrue, Message: "Kubelet is healthy"},
+				{Type: v1.NodeReady, Status: v1.ConditionTrue, Message: msgKubletHealthy},
 			},
 			status:   tick,
 			messages: nil,
 		},
 		{
 			conditions: []v1.NodeCondition{
-				{Type: "Ready", Status: v1.ConditionFalse, Message: "Kubelet is unhealthy"},
+				{Type: v1.NodeReady, Status: v1.ConditionFalse, Message: msgKubletUnHealthy},
 			},
 			status:   "x",
 			messages: []string{"Node condition Ready is now: False, message: \"Kubelet is unhealthy\""},
 		},
 		{
 			conditions: []v1.NodeCondition{
-				{Type: "Ready", Status: v1.ConditionTrue, Message: "Kubelet is healthy"},
-				{Type: "DiskPressure", Status: v1.ConditionTrue, Message: "Disk is full"},
+				{Type: v1.NodeReady, Status: v1.ConditionTrue, Message: msgKubletHealthy},
+				{Type: v1.NodeDiskPressure, Status: v1.ConditionTrue, Message: msgDiskIsFull},
 			},
 			status:   "x",
 			messages: []string{"Node condition DiskPressure is now: True, message: \"Disk is full\""},
 		},
 		{
 			conditions: []v1.NodeCondition{
-				{Type: "Ready", Status: v1.ConditionTrue, Message: "Kubelet is healthy"},
+				{Type: v1.NodeReady, Status: v1.ConditionTrue, Message: msgKubletHealthy},
 				{Type: "CPUPressure", Status: v1.ConditionTrue, Message: "CPU is overloaded"},
 			},
 			status:   "x",
@@ -47,21 +53,21 @@ func TestGetNodeStatus(t *testing.T) {
 		},
 		{
 			conditions: []v1.NodeCondition{
-				{Type: "Ready", Status: v1.ConditionTrue, Message: "Kubelet is healthy"},
+				{Type: v1.NodeReady, Status: v1.ConditionTrue, Message: msgKubletHealthy},
 				{Type: "ContainerRuntimeUnhealthy", Status: v1.ConditionTrue, Message: "Container runtime is unhealthy"},
 				{Type: "CorruptDockerOverlay2", Status: v1.ConditionTrue, Message: "Docker overlay is corrupt"},
 				{Type: "CPUPressure", Status: v1.ConditionTrue, Message: "CPU is overloaded"},
-				{Type: "DiskPressure", Status: v1.ConditionTrue, Message: "Disk is full"},
+				{Type: v1.NodeDiskPressure, Status: v1.ConditionTrue, Message: msgDiskIsFull},
 				{Type: "FrequentContainerdRestart", Status: v1.ConditionTrue, Message: "Containerd is restarting"},
 				{Type: "FrequentDockerRestart", Status: v1.ConditionTrue, Message: "Docker is restarting"},
 				{Type: "FrequentKubeletRestart", Status: v1.ConditionTrue, Message: "Kubelet is restarting"},
 				{Type: "FrequentUnregisterNetDevice", Status: v1.ConditionTrue, Message: "Network device is unregistering"},
 				{Type: "KernelDeadlock", Status: v1.ConditionTrue, Message: "Kernel is dead"},
-				{Type: "KubeletUnhealthy", Status: v1.ConditionTrue, Message: "Kubelet is unhealthy"},
-				{Type: "MemoryPressure", Status: v1.ConditionTrue, Message: "Memory is full"},
-				{Type: "NetworkUnavailable", Status: v1.ConditionTrue, Message: "Network is down"},
-				{Type: "OutOfDisk", Status: v1.ConditionTrue, Message: "Disk is full"},
-				{Type: "PIDPressure", Status: v1.ConditionTrue, Message: "PID is full"},
+				{Type: "KubeletUnhealthy", Status: v1.ConditionTrue, Message: msgKubletUnHealthy},
+				{Type: v1.NodeMemoryPressure, Status: v1.ConditionTrue, Message: "Memory is full"},
+				{Type: v1.NodeNetworkUnavailable, Status: v1.ConditionTrue, Message: "Network is down"},
+				{Type: "OutOfDisk", Status: v1.ConditionTrue, Message: msgDiskIsFull},
+				{Type: v1.NodePIDPressure, Status: v1.ConditionTrue, Message: "PID is full"},
 				{Type: "ReadonlyFilesystem", Status: v1.ConditionTrue, Message: "Filesystem is read-only"},
 			},
 			status: "x",

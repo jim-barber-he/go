@@ -35,7 +35,8 @@ func (t *Table[R]) Write(w ...io.Writer) {
 	t.write(true, w...)
 }
 
-// Write the table data, without its headers row to an io.Writer. If no io.Writer is provided, it defaults to os.Stdout.
+// WriteNoHeaders writes the table data without its headers row to an io.Writer.
+// If no io.Writer is provided, it defaults to os.Stdout.
 func (t *Table[R]) WriteNoHeaders(w ...io.Writer) {
 	t.write(false, w...)
 }
@@ -82,9 +83,9 @@ func (t *Table[R]) write(headers bool, w ...io.Writer) {
 	}
 
 	// Create a tab writer to display the table. Each row needs to consist of tab separated strings.
-	tw := tabwriter.NewWriter(out, tableMinWidth, tableTabWidth, tablePadding, tablePadChar, tableFlags)
+	writer := tabwriter.NewWriter(out, tableMinWidth, tableTabWidth, tablePadding, tablePadChar, tableFlags)
 
-	var s []string
+	var line []string
 
 	if headers {
 		// Add the title row of the table skipping any `omitempty` columns where all its values are empty.
@@ -93,15 +94,15 @@ func (t *Table[R]) write(headers bool, w ...io.Writer) {
 				continue
 			}
 
-			s = append(s, strings.Split(sf.Tag.Get("title"), ",")[0])
+			line = append(line, strings.Split(sf.Tag.Get("title"), ",")[0])
 		}
 
-		fmt.Fprintln(tw, strings.Join(s, "\t"))
+		fmt.Fprintln(writer, strings.Join(line, "\t"))
 	}
 
 	// Add the table rows skipping any `omitempty` columns where all its values are empty.
 	for _, row := range t.Rows {
-		s = nil
+		line = nil
 		val = reflect.ValueOf(row).Elem()
 
 		for i := range numFields {
@@ -109,14 +110,14 @@ func (t *Table[R]) write(headers bool, w ...io.Writer) {
 				continue
 			}
 
-			s = append(s, val.Field(i).String())
+			line = append(line, val.Field(i).String())
 		}
 
-		fmt.Fprintln(tw, strings.Join(s, "\t"))
+		fmt.Fprintln(writer, strings.Join(line, "\t"))
 	}
 
 	// Display the table.
-	err := tw.Flush()
+	err := writer.Flush()
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 	}

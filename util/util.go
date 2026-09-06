@@ -249,8 +249,7 @@ func RunWithTimeout(timeout int, command string, args ...string) (int, error) {
 	}
 
 	if err != nil {
-		var exitError *exec.ExitError
-		if errors.As(err, &exitError) {
+		if exitError, ok := errors.AsType[*exec.ExitError](err); ok {
 			return exitError.ExitCode(), fmt.Errorf("process exited with error: %w", exitError)
 		}
 

@@ -13,6 +13,23 @@ import (
 	awsutil "github.com/jim-barber-he/go/aws"
 )
 
+const (
+	errParamNotFound       string = "parameter not found"
+	nonExistentParm        string = "/nonexistent/parameter"
+	paramUser              string = "testuser"
+	secureParam            string = "/test/secure-param"
+	secureParamDescription string = "Secure test parameter"
+	secureParamKeyID       string = "alias/aws/ssm"
+	secureParamType        string = string(types.ParameterTypeSecureString)
+	secureParamValue       string = "secret-value"
+	testParam              string = "/test/parameter"
+	testParamArn           string = "arn:aws:ssm:ap-southeast-2:123456789012:parameter" + testParam
+	testParamDataType      string = "text"
+	testParamDescription   string = "Test parameter"
+	testParamType          string = string(types.ParameterTypeString)
+	testParamValue         string = "test-value"
+)
+
 // mockSSMClient is a mock implementation of the SSM client for testing.
 type mockSSMClient struct {
 	deleteParameterFunc func(
@@ -113,17 +130,17 @@ func TestSSMDelete(t *testing.T) {
 	}{
 		{
 			name:          "successful deletion",
-			parameterName: "/test/parameter",
+			parameterName: testParam,
 			mockFunc: func(_ context.Context, _ *ssm.DeleteParameterInput) (*ssm.DeleteParameterOutput, error) {
 				return &ssm.DeleteParameterOutput{}, nil
 			},
 			expectedError: false,
 		},
 		{
-			name:          "parameter not found",
-			parameterName: "/nonexistent/parameter",
+			name:          errParamNotFound,
+			parameterName: nonExistentParm,
 			mockFunc: func(_ context.Context, _ *ssm.DeleteParameterInput) (*ssm.DeleteParameterOutput, error) {
-				return nil, &types.ParameterNotFound{Message: aws.String("Parameter not found")}
+				return nil, &types.ParameterNotFound{Message: aws.String(errParamNotFound)}
 			},
 			expectedError: true,
 			errorContains: "failed to delete parameter",
@@ -192,8 +209,8 @@ func TestSSMDescribeParameter(t *testing.T) {
 					Parameters: []types.ParameterMetadata{
 						{
 							AllowedPattern:   aws.String("^[a-zA-Z0-9]+$"),
-							Description:      aws.String("Test parameter"),
-							LastModifiedUser: aws.String("testuser"),
+							Description:      aws.String(testParamDescription),
+							LastModifiedUser: aws.String(paramUser),
 							Type:             types.ParameterTypeString,
 							Tier:             types.ParameterTierStandard,
 						},
@@ -201,25 +218,25 @@ func TestSSMDescribeParameter(t *testing.T) {
 				}, nil
 			},
 			expectedAllowedPattern: "^[a-zA-Z0-9]+$",
-			expectedDescription:    "Test parameter",
+			expectedDescription:    testParamDescription,
 			expectedKeyID:          "",
-			expectedLastModUser:    "testuser",
+			expectedLastModUser:    paramUser,
 			expectedPolicies:       "",
 			expectedTier:           types.ParameterTierStandard,
 			expectedError:          false,
 		},
 		{
 			name:          "successful describe secure string parameter",
-			parameterName: "/test/secure-param",
+			parameterName: secureParam,
 			mockFunc: func(
 				_ context.Context, _ *ssm.DescribeParametersInput,
 			) (*ssm.DescribeParametersOutput, error) {
 				return &ssm.DescribeParametersOutput{
 					Parameters: []types.ParameterMetadata{
 						{
-							Description:      aws.String("Secure test parameter"),
-							KeyId:            aws.String("alias/aws/ssm"),
-							LastModifiedUser: aws.String("testuser"),
+							Description:      aws.String(secureParamDescription),
+							KeyId:            aws.String(secureParamKeyID),
+							LastModifiedUser: aws.String(paramUser),
 							Type:             types.ParameterTypeSecureString,
 							Tier:             types.ParameterTierStandard,
 							Policies: []types.ParameterInlinePolicy{
@@ -232,16 +249,16 @@ func TestSSMDescribeParameter(t *testing.T) {
 				}, nil
 			},
 			expectedAllowedPattern: "",
-			expectedDescription:    "Secure test parameter",
-			expectedKeyID:          "alias/aws/ssm",
-			expectedLastModUser:    "testuser",
+			expectedDescription:    secureParamDescription,
+			expectedKeyID:          secureParamKeyID,
+			expectedLastModUser:    paramUser,
 			expectedPolicies:       `[{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Principal":"*","Action":"ssm:GetParameter"}]}]`,
 			expectedTier:           types.ParameterTierStandard,
 			expectedError:          false,
 		},
 		{
-			name:          "parameter not found",
-			parameterName: "/nonexistent/parameter",
+			name:          errParamNotFound,
+			parameterName: nonExistentParm,
 			mockFunc: func(
 				_ context.Context, _ *ssm.DescribeParametersInput,
 			) (*ssm.DescribeParametersOutput, error) {
@@ -254,7 +271,7 @@ func TestSSMDescribeParameter(t *testing.T) {
 		},
 		{
 			name:          "multiple parameters returned",
-			parameterName: "/test/parameter",
+			parameterName: testParam,
 			mockFunc: func(
 				_ context.Context, _ *ssm.DescribeParametersInput,
 			) (*ssm.DescribeParametersOutput, error) {
@@ -270,7 +287,7 @@ func TestSSMDescribeParameter(t *testing.T) {
 		},
 		{
 			name:          "API error",
-			parameterName: "/test/parameter",
+			parameterName: testParam,
 			mockFunc: func(
 				_ context.Context, _ *ssm.DescribeParametersInput,
 			) (*ssm.DescribeParametersOutput, error) {
@@ -427,49 +444,49 @@ func TestSSMGet(t *testing.T) {
 	}{
 		{
 			name:          "successful get without describe",
-			parameterName: "/test/parameter",
+			parameterName: testParam,
 			describe:      false,
 			getParameterFunc: func(
 				_ context.Context, _ *ssm.GetParameterInput,
 			) (*ssm.GetParameterOutput, error) {
 				return &ssm.GetParameterOutput{
 					Parameter: &types.Parameter{
-						ARN:              aws.String("arn:aws:ssm:ap-southeast-2:123456789012:parameter/test/parameter"),
-						DataType:         aws.String("text"),
+						ARN:              aws.String(testParamArn),
+						DataType:         aws.String(testParamDataType),
 						LastModifiedDate: aws.Time(testTime),
-						Name:             aws.String("/test/parameter"),
+						Name:             aws.String(testParam),
 						Type:             types.ParameterTypeString,
-						Value:            aws.String("test-value"),
+						Value:            aws.String(testParamValue),
 						Version:          int64(1),
 					},
 				}, nil
 			},
 			expectedParam: awsutil.SSMParameter{
-				ARN:              "arn:aws:ssm:ap-southeast-2:123456789012:parameter/test/parameter",
-				DataType:         "text",
+				ARN:              testParamArn,
+				DataType:         testParamDataType,
 				LastModifiedDate: testTime,
-				Name:             "/test/parameter",
-				Type:             "String",
-				Value:            "test-value",
+				Name:             testParam,
+				Type:             testParamType,
+				Value:            testParamValue,
 				Version:          1,
 			},
 			expectedError: false,
 		},
 		{
 			name:          "successful get with describe",
-			parameterName: "/test/parameter",
+			parameterName: testParam,
 			describe:      true,
 			getParameterFunc: func(
 				_ context.Context, _ *ssm.GetParameterInput,
 			) (*ssm.GetParameterOutput, error) {
 				return &ssm.GetParameterOutput{
 					Parameter: &types.Parameter{
-						ARN:              aws.String("arn:aws:ssm:ap-southeast-2:123456789012:parameter/test/parameter"),
-						DataType:         aws.String("text"),
+						ARN:              aws.String(testParamArn),
+						DataType:         aws.String(testParamDataType),
 						LastModifiedDate: aws.Time(testTime),
 						Name:             aws.String("/test/parameter"),
 						Type:             types.ParameterTypeString,
-						Value:            aws.String("test-value"),
+						Value:            aws.String(testParamValue),
 						Version:          int64(1),
 					},
 				}, nil
@@ -480,8 +497,8 @@ func TestSSMGet(t *testing.T) {
 				return &ssm.DescribeParametersOutput{
 					Parameters: []types.ParameterMetadata{
 						{
-							Description:      aws.String("Test parameter"),
-							LastModifiedUser: aws.String("testuser"),
+							Description:      aws.String(testParamDescription),
+							LastModifiedUser: aws.String(paramUser),
 							Type:             types.ParameterTypeString,
 							Tier:             types.ParameterTierStandard,
 						},
@@ -489,52 +506,52 @@ func TestSSMGet(t *testing.T) {
 				}, nil
 			},
 			expectedParam: awsutil.SSMParameter{
-				ARN:              "arn:aws:ssm:ap-southeast-2:123456789012:parameter/test/parameter",
-				DataType:         "text",
-				Description:      "Test parameter",
+				ARN:              testParamArn,
+				DataType:         testParamDataType,
+				Description:      testParamDescription,
 				LastModifiedDate: testTime,
-				LastModifiedUser: "testuser",
-				Name:             "/test/parameter",
+				LastModifiedUser: paramUser,
+				Name:             testParam,
 				Tier:             types.ParameterTierStandard,
-				Type:             "String",
-				Value:            "test-value",
+				Type:             testParamType,
+				Value:            testParamValue,
 				Version:          1,
 			},
 			expectedError: false,
 		},
 		{
 			name:          "parameter with nil data type",
-			parameterName: "/test/parameter",
+			parameterName: testParam,
 			describe:      false,
 			getParameterFunc: func(
 				_ context.Context, _ *ssm.GetParameterInput,
 			) (*ssm.GetParameterOutput, error) {
 				return &ssm.GetParameterOutput{
 					Parameter: &types.Parameter{
-						ARN:              aws.String("arn:aws:ssm:ap-southeast-2:123456789012:parameter/test/parameter"),
+						ARN:              aws.String(testParamArn),
 						DataType:         nil, // nil data type.
 						LastModifiedDate: aws.Time(testTime),
 						Name:             aws.String("/test/parameter"),
 						Type:             types.ParameterTypeString,
-						Value:            aws.String("test-value"),
+						Value:            aws.String(testParamValue),
 						Version:          int64(1),
 					},
 				}, nil
 			},
 			expectedParam: awsutil.SSMParameter{
-				ARN:              "arn:aws:ssm:ap-southeast-2:123456789012:parameter/test/parameter",
-				DataType:         "text", // should default to "text".
+				ARN:              testParamArn,
+				DataType:         testParamDataType, // should default to "text".
 				LastModifiedDate: testTime,
-				Name:             "/test/parameter",
-				Type:             "String",
-				Value:            "test-value",
+				Name:             testParam,
+				Type:             testParamType,
+				Value:            testParamValue,
 				Version:          1,
 			},
 			expectedError: false,
 		},
 		{
 			name:          "decryption error then fallback",
-			parameterName: "/test/secure-parameter",
+			parameterName: secureParam,
 			describe:      false,
 			getParameterFunc: func(
 				_ context.Context, params *ssm.GetParameterInput,
@@ -546,10 +563,10 @@ func TestSSMGet(t *testing.T) {
 
 				return &ssm.GetParameterOutput{
 					Parameter: &types.Parameter{
-						ARN:              aws.String("arn:aws:ssm:ap-southeast-2:123456789012:parameter/test/secure-parameter"),
-						DataType:         aws.String("text"),
+						ARN:              aws.String(testParamArn),
+						DataType:         aws.String(testParamDataType),
 						LastModifiedDate: aws.Time(testTime),
-						Name:             aws.String("/test/secure-parameter"),
+						Name:             aws.String(secureParam),
 						Type:             types.ParameterTypeSecureString,
 						Value:            aws.String(""), // value cleared on decryption failure.
 						Version:          int64(1),
@@ -557,25 +574,25 @@ func TestSSMGet(t *testing.T) {
 				}, nil
 			},
 			expectedParam: awsutil.SSMParameter{
-				ARN:              "arn:aws:ssm:ap-southeast-2:123456789012:parameter/test/secure-parameter",
-				DataType:         "text",
+				ARN:              testParamArn,
+				DataType:         testParamDataType,
 				Error:            "decryption failed",
 				LastModifiedDate: testTime,
-				Name:             "/test/secure-parameter",
-				Type:             "SecureString",
+				Name:             secureParam,
+				Type:             secureParamType,
 				Value:            "",
 				Version:          1,
 			},
 			expectedError: false,
 		},
 		{
-			name:          "parameter not found",
-			parameterName: "/nonexistent/parameter",
+			name:          errParamNotFound,
+			parameterName: nonExistentParm,
 			describe:      false,
 			getParameterFunc: func(
 				_ context.Context, _ *ssm.GetParameterInput,
 			) (*ssm.GetParameterOutput, error) {
-				return nil, &types.ParameterNotFound{Message: aws.String("Parameter not found")}
+				return nil, &types.ParameterNotFound{Message: aws.String(errParamNotFound)}
 			},
 			expectedError: true,
 			errorContains: "failed to get parameter",
@@ -683,7 +700,7 @@ func ssmGetWithClient(
 
 	// For some reason some SSM parameters had no data type set... These seem to show in the GUI as text.
 	if output.Parameter.DataType == nil {
-		param.DataType = "text"
+		param.DataType = testParamDataType
 	} else {
 		param.DataType = aws.ToString(output.Parameter.DataType)
 	}
@@ -728,10 +745,10 @@ func TestSSMPut(t *testing.T) {
 		{
 			name: "successful put string parameter",
 			parameter: &awsutil.SSMParameter{
-				Name:        "/test/parameter",
-				Value:       "test-value",
-				Type:        "String",
-				Description: "Test parameter",
+				Name:        testParam,
+				Value:       testParamValue,
+				Type:        testParamType,
+				Description: testParamDescription,
 				Tier:        types.ParameterTierStandard,
 			},
 			mockFunc: func(_ context.Context, _ *ssm.PutParameterInput) (*ssm.PutParameterOutput, error) {
@@ -743,15 +760,15 @@ func TestSSMPut(t *testing.T) {
 		{
 			name: "successful put secure string parameter",
 			parameter: &awsutil.SSMParameter{
-				Name:        "/test/secure-parameter",
-				Value:       "secret-value",
-				Type:        "SecureString",
-				KeyID:       "alias/aws/ssm",
-				Description: "Secure test parameter",
+				Name:        secureParam,
+				Value:       secureParamValue,
+				Type:        secureParamType,
+				KeyID:       secureParamKeyID,
+				Description: secureParamDescription,
 			},
 			mockFunc: func(_ context.Context, params *ssm.PutParameterInput) (*ssm.PutParameterOutput, error) {
 				// Verify that KeyId is set for SecureString.
-				if aws.ToString(params.KeyId) != "alias/aws/ssm" {
+				if aws.ToString(params.KeyId) != secureParamKeyID {
 					return nil, errKeyIDNotSet
 				}
 
@@ -765,7 +782,7 @@ func TestSSMPut(t *testing.T) {
 			parameter: &awsutil.SSMParameter{
 				Name:           "/test/pattern-parameter",
 				Value:          "ABC123",
-				Type:           "String",
+				Type:           testParamType,
 				AllowedPattern: "^[A-Z0-9]+$",
 			},
 			mockFunc: func(_ context.Context, _ *ssm.PutParameterInput) (*ssm.PutParameterOutput, error) {
@@ -779,7 +796,7 @@ func TestSSMPut(t *testing.T) {
 			parameter: &awsutil.SSMParameter{
 				Name:  "/invalid/parameter",
 				Value: "invalid-value",
-				Type:  "String",
+				Type:  testParamType,
 			},
 			mockFunc: func(_ context.Context, _ *ssm.PutParameterInput) (*ssm.PutParameterOutput, error) {
 				return nil, errValidationError
@@ -791,8 +808,8 @@ func TestSSMPut(t *testing.T) {
 			name: "access denied error",
 			parameter: &awsutil.SSMParameter{
 				Name:  "/restricted/parameter",
-				Value: "test-value",
-				Type:  "String",
+				Value: testParamValue,
+				Type:  testParamType,
 			},
 			mockFunc: func(_ context.Context, _ *ssm.PutParameterInput) (*ssm.PutParameterOutput, error) {
 				return nil, errAccessDenied
@@ -883,13 +900,13 @@ func TestSSMParameterPrint(t *testing.T) {
 		{
 			name: "print text format with value",
 			param: awsutil.SSMParameter{
-				ARN:              "arn:aws:ssm:ap-southeast-2:123456789012:parameter/test/parameter",
-				DataType:         "text",
-				Description:      "Test parameter",
+				ARN:              testParamArn,
+				DataType:         testParamDataType,
+				Description:      testParamDescription,
 				LastModifiedDate: testTime,
-				Name:             "/test/parameter",
-				Type:             "String",
-				Value:            "test-value",
+				Name:             testParam,
+				Type:             testParamType,
+				Value:            testParamValue,
 				Version:          1,
 			},
 			hideValue: false,
@@ -898,13 +915,13 @@ func TestSSMParameterPrint(t *testing.T) {
 		{
 			name: "print text format without value",
 			param: awsutil.SSMParameter{
-				ARN:              "arn:aws:ssm:ap-southeast-2:123456789012:parameter/test/parameter",
-				DataType:         "text",
-				Description:      "Test parameter",
+				ARN:              testParamArn,
+				DataType:         testParamDataType,
+				Description:      testParamDescription,
 				LastModifiedDate: testTime,
-				Name:             "/test/parameter",
-				Type:             "String",
-				Value:            "test-value",
+				Name:             testParam,
+				Type:             testParamType,
+				Value:            testParamValue,
 				Version:          1,
 			},
 			hideValue: true,
@@ -913,13 +930,13 @@ func TestSSMParameterPrint(t *testing.T) {
 		{
 			name: "print JSON format with value",
 			param: awsutil.SSMParameter{
-				ARN:              "arn:aws:ssm:ap-southeast-2:123456789012:parameter/test/parameter",
-				DataType:         "text",
-				Description:      "Test parameter",
+				ARN:              testParamArn,
+				DataType:         testParamDataType,
+				Description:      testParamDescription,
 				LastModifiedDate: testTime,
-				Name:             "/test/parameter",
-				Type:             "String",
-				Value:            "test-value",
+				Name:             testParam,
+				Type:             testParamType,
+				Value:            testParamValue,
 				Version:          1,
 			},
 			hideValue: false,
@@ -928,13 +945,13 @@ func TestSSMParameterPrint(t *testing.T) {
 		{
 			name: "print JSON format without value",
 			param: awsutil.SSMParameter{
-				ARN:              "arn:aws:ssm:ap-southeast-2:123456789012:parameter/test/parameter",
-				DataType:         "text",
-				Description:      "Test parameter",
+				ARN:              testParamArn,
+				DataType:         testParamDataType,
+				Description:      testParamDescription,
 				LastModifiedDate: testTime,
-				Name:             "/test/parameter",
-				Type:             "String",
-				Value:            "test-value",
+				Name:             testParam,
+				Type:             testParamType,
+				Value:            testParamValue,
 				Version:          1,
 			},
 			hideValue: true,

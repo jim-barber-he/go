@@ -236,28 +236,33 @@ func createTableRow(node *v1.Node, wide bool) tableRow {
 
 // getNodeStatus looks at the conditions of a node and returns the node's status and any associated warning messages.
 func getNodeStatus(conditions []v1.NodeCondition) (string, []string) {
+	const (
+		conditionFalse v1.ConditionStatus = "False"
+		conditionTrue  v1.ConditionStatus = "True"
+	)
+
 	var (
 		goodStatuses = map[v1.NodeConditionType]v1.ConditionStatus{
-			"ContainerRuntimeReady":       "True",
-			"ContainerRuntimeUnhealthy":   "False",
-			"CorruptDockerOverlay2":       "False",
-			"CPUPressure":                 "False",
-			"DiskPressure":                "False",
-			"FrequentContainerdRestart":   "False",
-			"FrequentDockerRestart":       "False",
-			"FrequentKubeletRestart":      "False",
-			"FrequentUnregisterNetDevice": "False",
-			"KernelDeadlock":              "False",
-			"KernelReady":                 "True",
-			"KubeletUnhealthy":            "False",
-			"MemoryPressure":              "False",
-			"NetworkingReady":             "True",
-			"NetworkUnavailable":          "False",
-			"OutOfDisk":                   "False",
-			"PIDPressure":                 "False",
-			"ReadonlyFilesystem":          "False",
-			"Ready":                       "True",
-			"StorageReady":                "True",
+			"ContainerRuntimeReady":       conditionTrue,
+			"ContainerRuntimeUnhealthy":   conditionFalse,
+			"CorruptDockerOverlay2":       conditionFalse,
+			"CPUPressure":                 conditionFalse,
+			"DiskPressure":                conditionFalse,
+			"FrequentContainerdRestart":   conditionFalse,
+			"FrequentDockerRestart":       conditionFalse,
+			"FrequentKubeletRestart":      conditionFalse,
+			"FrequentUnregisterNetDevice": conditionFalse,
+			"KernelDeadlock":              conditionFalse,
+			"KernelReady":                 conditionTrue,
+			"KubeletUnhealthy":            conditionFalse,
+			"MemoryPressure":              conditionFalse,
+			"NetworkingReady":             conditionTrue,
+			"NetworkUnavailable":          conditionFalse,
+			"OutOfDisk":                   conditionFalse,
+			"PIDPressure":                 conditionFalse,
+			"ReadonlyFilesystem":          conditionFalse,
+			"Ready":                       conditionTrue,
+			"StorageReady":                conditionTrue,
 		}
 		messages []string
 	)
