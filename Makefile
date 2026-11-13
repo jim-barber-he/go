@@ -35,5 +35,4 @@ update:
 	go mod tidy
 
 vulncheck:
-	# go install golang.org/x/vuln/cmd/govulncheck@latest
-	govulncheck ./...
+	go run golang.org/x/vuln/cmd/govulncheck@latest ./...

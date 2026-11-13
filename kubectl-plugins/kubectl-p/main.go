@@ -174,10 +174,15 @@ func run(opts options) error {
 	if opts.instanceGroup != "" {
 		re := regexp.MustCompile(string(opts.instanceGroup))
 		podItems = slices.DeleteFunc(podItems, func(pod v1.Pod) bool {
+			node, ok := nodes[pod.Spec.NodeName]
+			if !ok {
+				return true
+			}
+
 			return !re.MatchString(
 				cmp.Or(
-					nodes[pod.Spec.NodeName].Labels["kops.k8s.io/instancegroup"],
-					nodes[pod.Spec.NodeName].Labels["eks.amazonaws.com/nodegroup"],
+					node.Labels["kops.k8s.io/instancegroup"],
+					node.Labels["eks.amazonaws.com/nodegroup"],
 				),
 			)
 		})
